@@ -1,0 +1,131 @@
+using System.Security.Cryptography;
+
+namespace GogDisc.Core;
+
+public sealed record CopyProgress(string FileName, long DiscBytesCopied, long DiscBytesTotal, long FileBytesCopied, long FileBytesTotal)
+{
+    public double DiscPercent => DiscBytesTotal == 0 ? 0 : DiscBytesCopied * 100d / DiscBytesTotal;
+}
+
+public static class StagingCopier
+{
+    public static async Task CopyDiscAsync(
+        LoadedDisc media,
+        string stagingRoot,
+        StagingState state,
+        IProgress<CopyProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(stagingRoot);
+        var entries = media.Disc.Files.Where(file => file.Kind == PackageFileKind.Installer).ToList();
+        var total = entries.Sum(file => file.Size);
+        long completed = 0;
+
+        foreach (var entry in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var source = SafePaths.ResolveUnderRoot(media.Root, entry.DiscPath);
+            var destination = SafePaths.ResolveUnderRoot(stagingRoot, entry.RelativePath);
+            var multipart = PartCount(entry) > 1;
+            var assemblyPath = destination + ".gog-assembling";
+            var key = VerificationKey(entry);
+
+            if (IsVerified(entry, destination, assemblyPath, state))
+            {
+                completed += entry.Size;
+                progress?.Report(new CopyProgress(entry.RelativePath, completed, total, entry.Size, entry.Size));
+                FinalizeIfComplete(media.Package, entry, destination, assemblyPath, state);
+                continue;
+            }
+
+            if (!File.Exists(source) || new FileInfo(source).Length != entry.Size)
+                throw new IOException($"Missing or incorrectly sized disc file: {entry.DiscPath}");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            var outputPath = multipart ? assemblyPath : destination + ".partial";
+            if (!multipart && File.Exists(outputPath)) File.Delete(outputPath);
+
+            await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true);
+            await using var output = new FileStream(outputPath, multipart ? FileMode.OpenOrCreate : FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 1024 * 1024, true);
+            if (multipart) output.Seek(entry.SourceOffset, SeekOrigin.Begin);
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[1024 * 1024];
+            long fileCopied = 0;
+            int read;
+            while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                hasher.AppendData(buffer, 0, read);
+                fileCopied += read;
+                progress?.Report(new CopyProgress(entry.RelativePath, completed + fileCopied, total, fileCopied, entry.Size));
+            }
+            await output.FlushAsync(cancellationToken);
+            output.Close();
+
+            var actualHash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+            if (!actualHash.Equals(entry.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!multipart) File.Delete(outputPath);
+                throw new IOException($"Verification failed for {entry.RelativePath}. Clean the disc and try again.");
+            }
+
+            if (!multipart)
+            {
+                if (File.Exists(destination)) File.Delete(destination);
+                File.Move(outputPath, destination);
+            }
+            state.VerifiedFiles.Add(key);
+            StagingStateStore.Save(stagingRoot, state);
+            FinalizeIfComplete(media.Package, entry, destination, assemblyPath, state);
+            completed += entry.Size;
+        }
+    }
+
+    public static long RemainingBytes(PackageManifest package, string stagingRoot, StagingState state) =>
+        package.Files.Where(file => file.Kind == PackageFileKind.Installer)
+            .Where(file =>
+            {
+                var destination = SafePaths.ResolveUnderRoot(stagingRoot, file.RelativePath);
+                return !IsVerified(file, destination, destination + ".gog-assembling", state);
+            })
+            .Sum(file => file.Size);
+
+    public static bool IsEntryVerified(PackageFileEntry entry, string stagingRoot, StagingState state)
+    {
+        var destination = SafePaths.ResolveUnderRoot(stagingRoot, entry.RelativePath);
+        return IsVerified(entry, destination, destination + ".gog-assembling", state);
+    }
+
+    private static bool IsVerified(PackageFileEntry entry, string destination, string assemblyPath, StagingState state)
+    {
+        if (!state.VerifiedFiles.Contains(VerificationKey(entry))) return false;
+        if (PartCount(entry) <= 1)
+            return File.Exists(destination) && new FileInfo(destination).Length == entry.Size;
+        if (File.Exists(destination) && new FileInfo(destination).Length == SourceSize(entry)) return true;
+        return File.Exists(assemblyPath) && new FileInfo(assemblyPath).Length >= entry.SourceOffset + entry.Size;
+    }
+
+    private static void FinalizeIfComplete(
+        PackageManifest package,
+        PackageFileEntry entry,
+        string destination,
+        string assemblyPath,
+        StagingState state)
+    {
+        if (PartCount(entry) <= 1) return;
+        var parts = package.Files.Where(file => file.Kind == entry.Kind &&
+            file.RelativePath.Equals(entry.RelativePath, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (parts.Any(part => !state.VerifiedFiles.Contains(VerificationKey(part)))) return;
+        if (!File.Exists(assemblyPath) || new FileInfo(assemblyPath).Length != SourceSize(entry))
+            throw new IOException($"Reassembled file has an unexpected size: {entry.RelativePath}");
+        if (File.Exists(destination)) File.Delete(destination);
+        File.Move(assemblyPath, destination);
+    }
+
+    private static string VerificationKey(PackageFileEntry entry) =>
+        PartCount(entry) <= 1 ? entry.RelativePath : $"{entry.RelativePath}|part:{entry.PartIndex:D4}";
+
+    private static int PartCount(PackageFileEntry entry) => Math.Max(1, entry.PartCount);
+    private static long SourceSize(PackageFileEntry entry) => entry.SourceSize > 0 ? entry.SourceSize : entry.Size;
+}

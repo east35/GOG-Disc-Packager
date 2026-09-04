@@ -1,0 +1,6 @@
+artifacts/
+**/bin/
+**/obj/
+.dotnet-cli/
+.nuget-packages/
+.ui-preview/

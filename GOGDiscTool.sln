@@ -1,0 +1,37 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.Core", "src\GogDisc.Core\GogDisc.Core.csproj", "{EC52AC8B-62A9-4BD6-BB52-E314BCF9C456}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.Packager", "src\GogDisc.Packager\GogDisc.Packager.csproj", "{7847A9B7-39CD-4834-A414-D67729B849F1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.Launcher", "src\GogDisc.Launcher\GogDisc.Launcher.csproj", "{C287FC46-E02A-47CB-A676-20B21AB4DA92}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.SelfTests", "tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj", "{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EC52AC8B-62A9-4BD6-BB52-E314BCF9C456}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EC52AC8B-62A9-4BD6-BB52-E314BCF9C456}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EC52AC8B-62A9-4BD6-BB52-E314BCF9C456}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EC52AC8B-62A9-4BD6-BB52-E314BCF9C456}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7847A9B7-39CD-4834-A414-D67729B849F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7847A9B7-39CD-4834-A414-D67729B849F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7847A9B7-39CD-4834-A414-D67729B849F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7847A9B7-39CD-4834-A414-D67729B849F1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C287FC46-E02A-47CB-A676-20B21AB4DA92}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C287FC46-E02A-47CB-A676-20B21AB4DA92}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C287FC46-E02A-47CB-A676-20B21AB4DA92}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C287FC46-E02A-47CB-A676-20B21AB4DA92}.Release|Any CPU.Build.0 = Release|Any CPU
+		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
