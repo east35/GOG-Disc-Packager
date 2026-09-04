@@ -2,7 +2,7 @@
 
 GOG Disc Packager turns an original GOG offline-installer backup into a polished, burn-ready physical release. It supports anything from a single CD to a game spread across multiple DVDs or Blu-ray discs while keeping the original GOG installer intact.
 
-[Download the latest Windows build](https://github.com/east35/GOG-Disc-Packager/releases/latest)
+[Download GOG Disc Packager v1.0.0 for Windows](https://github.com/east35/GOG-Disc-Packager/raw/main/build/GOG-Disc-Packager-v1.0.0-win-x64.zip)
 
 > This is an independent preservation tool. It is not affiliated with or endorsed by GOG, CD Projekt, or any game publisher. You must supply your own legally obtained GOG offline installers and artwork.
 
@@ -19,6 +19,10 @@ GOG Disc Packager turns an original GOG offline-installer backup into a polished
 - Detects an existing installation and changes the launcher to offer **Play**, **Uninstall**, and **Extras** where available.
 
 ## Screenshots
+
+### Package creator
+
+![GOG Disc Packager application](img/Image%203.png)
 
 ### Multi-disc installation
 
