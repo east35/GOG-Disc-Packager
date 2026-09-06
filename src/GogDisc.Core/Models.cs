@@ -8,6 +8,35 @@ public enum PackageProductType
     Dlc
 }
 
+public enum PackageDeploymentType
+{
+    OfflineMedia,
+    GogKeyMedia
+}
+
+public sealed class GogKeyProduct
+{
+    public string Format { get; set; } = "gog-key-disc";
+    public int Schema { get; set; } = 1;
+    public string ProductId { get; set; } = "";
+    public string Slug { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Platform { get; set; } = "windows";
+    public string Language { get; set; } = "en";
+    public int? AvailableExtras { get; set; }
+
+    public void Validate()
+    {
+        if (Format != "gog-key-disc" || Schema != 1)
+            throw new InvalidDataException("This GOG Key Media manifest format is not supported.");
+        if (string.IsNullOrWhiteSpace(ProductId) || !ProductId.All(char.IsDigit))
+            throw new InvalidDataException("The GOG product ID is invalid.");
+        if (string.IsNullOrWhiteSpace(Title)) throw new InvalidDataException("The GOG product title is missing.");
+        if (Platform != "windows") throw new InvalidDataException("Only Windows GOG Key Media is currently supported.");
+        if (string.IsNullOrWhiteSpace(Language)) throw new InvalidDataException("The GOG product language is missing.");
+    }
+}
+
 public enum PackageFileKind
 {
     Installer,
@@ -27,6 +56,8 @@ public sealed class PackageManifest
     public string Title { get; set; } = "";
     public string Version { get; set; } = "";
     public PackageProductType ProductType { get; set; }
+    public PackageDeploymentType DeploymentType { get; set; }
+    public GogKeyProduct? GogKeyProduct { get; set; }
     public string InstallerRelativePath { get; set; } = "";
     public int RequiredDiscCount { get; set; }
     public int TotalDiscCount { get; set; }
@@ -36,6 +67,17 @@ public sealed class PackageManifest
     public List<PackageDiscInfo> DiscLayout { get; set; } = [];
     public List<string> InstallDetectionNames { get; set; } = [];
     public List<PackageFileEntry> Files { get; set; } = [];
+}
+
+public sealed class KeyMediaBuildRequest
+{
+    public required GogKeyProduct Product { get; init; }
+    public required string OutputDirectory { get; init; }
+    public required string LauncherExecutable { get; init; }
+    public string Version { get; init; } = "Current GOG build";
+    public string? BackgroundImage { get; init; }
+    public string? CoverImage { get; init; }
+    public string? IconImage { get; init; }
 }
 
 public sealed class DiscManifest

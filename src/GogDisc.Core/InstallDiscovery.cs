@@ -71,11 +71,11 @@ public static class InstallDiscovery
         return shortcutState;
     }
 
-    public static InstallState SaveManualTarget(PackageManifest package, string target)
+    public static InstallState SaveManualTarget(PackageManifest package, string target, string? installLocation = null)
     {
         var current = InstallStateStore.Load(package.PackageId) ?? new InstallState { PackageId = package.PackageId, Title = package.Title };
         current.PlayTarget = Path.GetFullPath(target);
-        current.InstallLocation = Path.GetDirectoryName(current.PlayTarget);
+        current.InstallLocation = string.IsNullOrWhiteSpace(installLocation) ? Path.GetDirectoryName(current.PlayTarget) : Path.GetFullPath(installLocation);
         current.InstalledAt = DateTimeOffset.Now;
         InstallStateStore.Save(current);
         return current;

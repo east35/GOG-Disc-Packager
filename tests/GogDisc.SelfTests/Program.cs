@@ -55,6 +55,10 @@ await Run("Package build and staging", TestBuildAndStage);
 await Run("Path traversal rejection", TestPathSafety);
 await Run("Read-only runtime cache", TestReadOnlyCache);
 await Run("Incomplete and gapped families rejected", TestIncompleteFamilies);
+await Run("GOG Key Media package", TestKeyMediaPackage);
+await Run("GOG string size metadata", TestGogStringSizes);
+await Run("GOG localized download estimate", TestGogLocalizedEstimate);
+await Run("Owned Key Media uninstall", TestOwnedKeyUninstall);
 
 if (failures.Count > 0)
 {
@@ -264,6 +268,63 @@ Task TestIncompleteFamilies()
         gapped.File("setup_bad_1.0-3.bin", 10);
         Throws<InvalidDataException>(() => SetupFamilyScanner.Scan(setup));
     }
+    return Task.CompletedTask;
+}
+
+async Task TestKeyMediaPackage()
+{
+    using var fixture = new TempFixture();
+    var launcher = fixture.File("Launch.exe", 128);
+    var result = await KeyMediaBuilder.BuildAsync(new KeyMediaBuildRequest
+    {
+        Product = new GogKeyProduct { ProductId = "1091507383", Slug = "test_game", Title = "Test Game", Language = "en", AvailableExtras = 0 },
+        OutputDirectory = fixture.Directory("output"),
+        LauncherExecutable = launcher
+    });
+    Equal(PackageDeploymentType.GogKeyMedia, result.Manifest.DeploymentType);
+    Equal("1091507383", result.Manifest.GogKeyProduct!.ProductId);
+    Equal(0, result.Manifest.GogKeyProduct.AvailableExtras);
+    var mediaRoot = Path.Combine(result.PackageDirectory, "Key Media");
+    var media = DiscMedia.Load(mediaRoot);
+    Equal(0, media.Package.Files.Count);
+    True(!Directory.Exists(Path.Combine(mediaRoot, "Payload")), "Key Media unexpectedly contains a payload folder.");
+    True(File.ReadAllText(Path.Combine(mediaRoot, "package.json")).Contains("1091507383"), "Product identity was not written.");
+}
+
+Task TestGogStringSizes()
+{
+    using var plain = System.Text.Json.JsonDocument.Parse("\"105300000000\"");
+    True(GogDlRuntime.TryReadBytes(plain.RootElement, out var plainBytes), "Numeric string was not accepted.");
+    Equal(105_300_000_000L, plainBytes);
+    using var units = System.Text.Json.JsonDocument.Parse("\"105.3 GB\"");
+    True(GogDlRuntime.TryReadBytes(units.RootElement, out var unitBytes), "Human-readable size was not accepted.");
+    Equal(105_300_000_000L, unitBytes);
+    return Task.CompletedTask;
+}
+
+Task TestGogLocalizedEstimate()
+{
+    var json = "{\"size\":{\"*\":{\"download_size\":188,\"disk_size\":424},\"en-US\":{\"download_size\":451552662,\"disk_size\":585344616}}}";
+    var estimate = GogDlRuntime.ParseDownloadEstimate(json, "en");
+    Equal(451_552_850L, estimate.DownloadBytes);
+    Equal(585_345_040L, estimate.InstalledBytes);
+    return Task.CompletedTask;
+}
+
+Task TestOwnedKeyUninstall()
+{
+    using var fixture = new TempFixture();
+    var install = fixture.Directory("key-install");
+    File.WriteAllText(Path.Combine(install, "game.exe"), "game");
+    var package = new PackageManifest
+    {
+        PackageId = "gog-12345", Title = "Test", DeploymentType = PackageDeploymentType.GogKeyMedia,
+        GogKeyProduct = new GogKeyProduct { ProductId = "12345", Slug = "test", Title = "Test" }
+    };
+    KeyInstallOwnership.Mark(install, package);
+    True(KeyInstallOwnership.IsOwned(install, package), "Key installation marker was not accepted.");
+    KeyInstallOwnership.Remove(install, package);
+    True(!Directory.Exists(install), "Owned Key Media installation was not removed.");
     return Task.CompletedTask;
 }
 

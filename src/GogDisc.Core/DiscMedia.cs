@@ -15,6 +15,8 @@ public static class DiscMedia
         var packageBytes = File.ReadAllBytes(packagePath);
         var package = System.Text.Json.JsonSerializer.Deserialize<PackageManifest>(packageBytes, JsonFiles.Options)
             ?? throw new InvalidDataException("package.json is invalid.");
+        if (package.DeploymentType == PackageDeploymentType.GogKeyMedia)
+            (package.GogKeyProduct ?? throw new InvalidDataException("GOG Key Media identity is missing.")).Validate();
         var disc = JsonFiles.Read<DiscManifest>(discPath);
         if (!string.Equals(package.PackageId, disc.PackageId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The package and disc identifiers do not match.");

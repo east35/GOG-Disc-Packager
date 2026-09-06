@@ -5,6 +5,74 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#8424E8"/>
         <SolidColorBrush x:Key="AccentLightBrush" Color="#B534E8"/>
 
+        <!-- Spacing scale: 8 within a group, 16 between groups, 24 page gutter. -->
+        <Style x:Key="Section" TargetType="{x:Type StackPanel}">
+            <Setter Property="Margin" Value="0,0,0,16"/>
+        </Style>
+
+        <Style x:Key="SectionLabel" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+
+        <Style x:Key="SectionHint" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="#8A8A8A"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,8,0,0"/>
+        </Style>
+
+        <Style x:Key="Card" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D3D3D3"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="MinHeight" Value="68"/>
+        </Style>
+
+        <Style x:Key="CardText" TargetType="{x:Type TextBlock}">
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+
+        <Style x:Key="CardSubtext" TargetType="{x:Type TextBlock}" BasedOn="{StaticResource CardText}">
+            <Setter Property="Foreground" Value="#8A8A8A"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
+        </Style>
+
+        <Style x:Key="KeyToggle" TargetType="{x:Type ToggleButton}">
+            <Setter Property="Width" Value="56"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                        <Border x:Name="Track" CornerRadius="15" Background="#E4E1E7" BorderBrush="#817B85" BorderThickness="2">
+                            <Ellipse x:Name="Thumb" Width="20" Height="20" Margin="3" HorizontalAlignment="Left" Fill="#77717B"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#A832E5" Offset="0"/><GradientStop Color="#7020DF" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="Track" Property="BorderBrush" Value="#7020DF"/>
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="Thumb" Property="Fill" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="BaseButton" TargetType="{x:Type Button}">
             <Setter Property="Height" Value="50"/>
             <Setter Property="Padding" Value="18,0"/>
@@ -98,6 +166,12 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="CardActionButton" TargetType="{x:Type Button}" BasedOn="{StaticResource LinkButton}">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
         <Style x:Key="DiscProgress" TargetType="{x:Type ProgressBar}">

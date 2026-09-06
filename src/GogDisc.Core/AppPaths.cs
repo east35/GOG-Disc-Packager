@@ -7,6 +7,8 @@ public static class AppPaths
     public static string State => Path.Combine(Root, "State");
     public static string Staging => Path.Combine(Root, "Staging");
     public static string Logs => Path.Combine(Root, "Logs");
+    public static string GogRuntime => Path.Combine(Root, "GOG Runtime");
+    public static string GogAuth => Path.Combine(GogRuntime, "auth.json");
 
     public static string PackageState(string packageId) => Path.Combine(State, PackageBuilder.SanitizeFileName(packageId) + ".json");
     public static string PackageLog(string packageId) => Path.Combine(Logs, PackageBuilder.SanitizeFileName(packageId) + ".log");

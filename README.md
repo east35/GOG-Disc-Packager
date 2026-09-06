@@ -1,6 +1,6 @@
 # GOG Disc Packager
 
-GOG Disc Packager turns an original GOG offline-installer backup into a polished, burn-ready physical release. It supports anything from a single CD to a game spread across multiple DVDs or Blu-ray discs while keeping the original GOG installer intact.
+GOG Disc Packager creates two kinds of physical GOG release: traditional offline media containing an original GOG installer backup, and compact **GOG Key Media** that stores durable product identity and retrieves an owned game from GOG at installation time.
 
 [Download GOG Disc Packager v1.0.0 for Windows](https://github.com/east35/GOG-Disc-Packager/raw/main/build/GOG-Disc-Packager-v1.0.0-win-x64.zip)
 
@@ -17,6 +17,10 @@ GOG Disc Packager turns an original GOG offline-installer backup into a polished
 - Creates one burn-ready directory per disc with `autorun.inf`, the launcher, metadata, artwork, payload files, and integrity hashes.
 - Provides a themed launcher that stays open while requesting each disc, displays copy progress, and starts the untouched GOG installer when staging is complete.
 - Detects an existing installation and changes the launcher to offer **Play**, **Uninstall**, and **Extras** where available.
+- Creates payload-free GOG Key Media for CD, DVD, Blu-ray, USB, or another filesystem-based medium.
+- Key Media installs the current Galaxy build directly by default, avoiding a second full-size installer copy.
+- Optionally downloads and keeps the current offline `.exe`/`.bin` backup, then reuses the original-installer workflow.
+- Authenticates in the user's browser; credentials, tokens, and expiring download URLs are never written to physical media.
 
 ## Screenshots
 
@@ -56,6 +60,14 @@ Building from source requires:
 7. Select an output folder and choose **Scan package**.
 8. Review the detected files, excluded patches, required disc count, and disc layout.
 9. Choose **Build disc folders**. The completed package directory opens automatically unless that option is disabled.
+
+For **GOG Key Media**, choose that deployment type, enter a game title or paste its GOG store URL, then select the matched product. The internal product ID and store slug are resolved automatically. No local setup file or media-capacity planning is required. Burn or copy the contents of the generated `Key Media` folder to any filesystem-based physical medium.
+
+## GOG Key Media installation
+
+The default path downloads the current Windows Galaxy build directly into the final game folder through the independently updated `gogdl` runtime. Enable **Keep an offline backup** to download the account's current offline installers into a chosen folder and run the normal GOG setup program from them instead. Those installers are kept, so the same build can be reinstalled later without GOG; uninstalling the game does not remove them. The launcher validates free space for the backup and the installed game. If a complete backup is already present it asks whether to reuse it or download the current build again. Bonus content is never mixed into the backup; it is retrieved separately through **Extras**.
+
+GOG sign-in uses GOG's browser authorization page. The runtime stores refresh/access credentials under `%LocalAppData%\GOG Disc Tool\GOG Runtime`; the physical media contains only the product identity. GOG Galaxy is detected for user context but is not required and its private state is not automated.
 
 The packager reserves space on each disc for filesystem overhead and package support files. Capacity values therefore do not represent payload space byte-for-byte.
 

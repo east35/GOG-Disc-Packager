@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private SetupFamily? _family;
     private PackagePlan? _plan;
     private CancellationTokenSource? _cancellation;
+    private GogCatalogProduct? _resolvedGame;
 
     public MainWindow()
     {
@@ -78,12 +79,69 @@ public partial class MainWindow : Window
 
     private void MediaInventoryBox_TextChanged(object sender, TextChangedEventArgs e) => ResetScan();
 
+    private void GameLookupBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _resolvedGame = null;
+        if (ResolvedGameBox is not null) ResolvedGameBox.ItemsSource = null;
+        ResetScan();
+    }
+
+    private async void FindGame_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            StatusText.Text = "Searching the GOG catalog…";
+            var products = await new GogCatalogClient().SearchAsync(GameLookupBox.Text);
+            if (products.Count == 0) throw new InvalidOperationException("No matching GOG products were found. Try the full store URL or a more exact title.");
+            ResolvedGameBox.ItemsSource = products;
+            ResolvedGameBox.SelectedIndex = 0;
+            StatusText.Text = products.Count == 1 ? "GOG product found" : $"Choose from {products.Count} matching GOG products";
+        }
+        catch (Exception ex) { ShowError(ex.Message); }
+    }
+
+    private void ResolvedGameBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _resolvedGame = ResolvedGameBox.SelectedItem as GogCatalogProduct;
+        if (_resolvedGame is null) return;
+        TitleBox.Text = _resolvedGame.Title;
+        ResetScan();
+    }
+
+    private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 1;
+
+    private void DeploymentTypeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (KeyIdentityPanel is null) return;
+        var key = IsKeyMedia;
+        KeyIdentityPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel, ExtrasLabel, ExtrasPanel, ExtrasBrowseButton })
+            control.Visibility = key ? Visibility.Collapsed : Visibility.Visible;
+        SummaryText.Text = key
+            ? "Enter the durable GOG product identity. The generated media will contain no game payload or account data."
+            : "Select a stock setup_*.exe, then scan the package.";
+        ScanButton.Content = key ? "Validate key media" : "Scan package";
+        BuildButton.Content = key ? "Build key media folder" : "Build disc folders";
+        ResetScan();
+    }
+
     private void Scan_Click(object sender, RoutedEventArgs e) => ScanPackage();
 
     private bool ScanPackage()
     {
         try
         {
+            if (IsKeyMedia)
+            {
+                var product = GetKeyProduct();
+                product.Validate();
+                _family = null;
+                _plan = null;
+                SummaryText.Text = $"GOG Key Media for {product.Title}\nProduct ID: {product.ProductId}\nPlatform/language: {product.Platform}/{product.Language}\n\nPayload: launcher and durable product identity only.";
+                BuildButton.IsEnabled = true;
+                StatusText.Text = "Key Media identity is valid";
+                return true;
+            }
             _family = SetupFamilyScanner.Scan(SetupBox.Text, EmptyToNull(ExtrasBox.Text), IncludePatchesBox.IsChecked == true);
             string? economySuggestion = null;
             if (MediaBox.SelectedIndex == 8)
@@ -125,7 +183,7 @@ public partial class MainWindow : Window
     private async void Build_Click(object sender, RoutedEventArgs e)
     {
         if (!ScanPackage()) return;
-        if (string.IsNullOrWhiteSpace(TitleBox.Text) || string.IsNullOrWhiteSpace(VersionBox.Text))
+        if (string.IsNullOrWhiteSpace(TitleBox.Text) || (!IsKeyMedia && string.IsNullOrWhiteSpace(VersionBox.Text)))
         {
             ShowError("Enter a title and version before building.");
             return;
@@ -137,6 +195,31 @@ public partial class MainWindow : Window
         try
         {
             var preparedIcon = IconPreparation.Prepare(EmptyToNull(IconBox.Text), out temporaryIcon);
+            if (IsKeyMedia)
+            {
+                var product = GetKeyProduct();
+                if (GogAuthentication.HasCredentials())
+                {
+                    StatusText.Text = "Checking available GOG extras…";
+                    product.AvailableExtras = (await new GogAccountDownloads().GetFilesAsync(product, _cancellation.Token))
+                        .Count(file => file.IsExtra);
+                }
+                var keyResult = await KeyMediaBuilder.BuildAsync(new KeyMediaBuildRequest
+                {
+                    Product = product,
+                    Version = string.IsNullOrWhiteSpace(VersionBox.Text) ? "Current GOG build" : VersionBox.Text,
+                    OutputDirectory = OutputBox.Text,
+                    LauncherExecutable = LauncherBox.Text,
+                    BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                    CoverImage = EmptyToNull(CoverBox.Text),
+                    IconImage = preparedIcon
+                }, _cancellation.Token);
+                Log(product.AvailableExtras is null
+                    ? "Extras availability could not be recorded because GOG was not signed in on this computer."
+                    : $"Recorded {product.AvailableExtras.Value} available GOG extra(s)." );
+                CompleteBuild(keyResult);
+                return;
+            }
             var progress = new Progress<PackagingProgress>(value =>
             {
                 BuildProgress.Value = value.Percent;
@@ -155,13 +238,7 @@ public partial class MainWindow : Window
                 CoverImage = EmptyToNull(CoverBox.Text),
                 IconImage = preparedIcon
             }, progress, _cancellation.Token);
-            Log($"Complete: {result.PackageDirectory}");
-            StatusText.Text = "Disc folders built and verified";
-            MessageBox.Show(this, $"Disc folders are ready:\n\n{result.PackageDirectory}", "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);
-            if (OpenWhenCompleteBox.IsChecked == true)
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{result.PackageDirectory}\"") { UseShellExecute = true });
-            if (ResetAfterBuildBox.IsChecked == true)
-                ClearBackupInputs();
+            CompleteBuild(result);
         }
         catch (OperationCanceledException)
         {
@@ -197,9 +274,35 @@ public partial class MainWindow : Window
         if (BuildButton is not null) BuildButton.IsEnabled = false;
     }
 
+    private GogKeyProduct GetKeyProduct()
+    {
+        if (_resolvedGame is null) throw new InvalidOperationException("Find and select the GOG game before building Key Media.");
+        return new GogKeyProduct
+        {
+            ProductId = _resolvedGame.ProductId,
+            Slug = _resolvedGame.Slug,
+            Title = _resolvedGame.Title,
+            Platform = "windows",
+            Language = string.IsNullOrWhiteSpace(LanguageBox.Text) ? "en" : LanguageBox.Text.Trim().ToLowerInvariant()
+        };
+    }
+
+    private void CompleteBuild(PackageBuildResult result)
+    {
+        Log($"Complete: {result.PackageDirectory}");
+        StatusText.Text = IsKeyMedia ? "Key Media folder built" : "Disc folders built and verified";
+        MessageBox.Show(this, $"Physical-media folder is ready:\n\n{result.PackageDirectory}", "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        if (OpenWhenCompleteBox.IsChecked == true)
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{result.PackageDirectory}\"") { UseShellExecute = true });
+        if (ResetAfterBuildBox.IsChecked == true) ClearBackupInputs();
+    }
+
     private void ClearBackupInputs()
     {
         SetupBox.Clear();
+        GameLookupBox.Clear();
+        ResolvedGameBox.ItemsSource = null;
+        _resolvedGame = null;
         TitleBox.Clear();
         VersionBox.Clear();
         ProductTypeBox.SelectedIndex = 0;

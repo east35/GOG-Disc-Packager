@@ -11,6 +11,24 @@
             <TextBlock Text="GOG DISC PACKAGER" FontSize="28" FontWeight="SemiBold"/>
             <TextBlock Text="Create a trustworthy one-product physical release from a stock GOG setup family."
                        Foreground="#AEB7C7" Margin="0,5,0,18"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                <TextBlock Text="Deployment type" Width="165" VerticalAlignment="Center"/>
+                <ComboBox x:Name="DeploymentTypeBox" Width="280" SelectedIndex="0" SelectionChanged="DeploymentTypeBox_SelectionChanged">
+                    <ComboBoxItem Content="Offline media (installer payload on media)"/>
+                    <ComboBoxItem Content="GOG Key Media (download when installing)"/>
+                </ComboBox>
+            </StackPanel>
+            <Grid x:Name="KeyIdentityPanel" Visibility="Collapsed" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="165"/><ColumnDefinition Width="280"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Game title or GOG URL" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Grid.ColumnSpan="2" x:Name="GameLookupBox" TextChanged="GameLookupBox_TextChanged"/>
+                <Button Grid.Column="3" Content="Find game" Click="FindGame_Click"/>
+                <TextBlock Grid.Row="1" Text="Matched GOG product" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="ResolvedGameBox" SelectionChanged="ResolvedGameBox_SelectionChanged"/>
+                <TextBlock Grid.Row="2" Text="Language" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" x:Name="LanguageBox" Text="en"/>
+                <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Margin="12,4,0,0" Foreground="#8F99AA" Text="Product identity is found automatically; no credentials or download URLs are written to media."/>
+            </Grid>
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -25,9 +43,9 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="GOG setup" VerticalAlignment="Center"/>
+                <TextBlock x:Name="SetupLabel" Grid.Row="0" Text="GOG setup" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="0" Grid.Column="1" x:Name="SetupBox"/>
-                <Button Grid.Row="0" Grid.Column="2" Content="Browse…" Click="BrowseSetup_Click"/>
+                <Button x:Name="SetupBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse…" Click="BrowseSetup_Click"/>
 
                 <TextBlock Grid.Row="1" Text="Title" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="1" Grid.Column="1" x:Name="TitleBox"/>
@@ -40,8 +58,8 @@
                     <ComboBoxItem Content="Base game"/><ComboBoxItem Content="DLC"/>
                 </ComboBox>
 
-                <TextBlock Grid.Row="4" Text="Media" VerticalAlignment="Top" Margin="0,8,0,0"/>
-                <StackPanel Grid.Row="4" Grid.Column="1">
+                <TextBlock x:Name="MediaLabel" Grid.Row="4" Text="Media" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                <StackPanel x:Name="MediaPanel" Grid.Row="4" Grid.Column="1">
                     <StackPanel Orientation="Horizontal">
                         <ComboBox x:Name="MediaBox" Width="280" SelectedIndex="5" SelectionChanged="MediaBox_SelectionChanged">
                             <ComboBoxItem Content="CD-R 74 min (650 MB)"/>
@@ -67,13 +85,13 @@
                     </StackPanel>
                 </StackPanel>
 
-                <TextBlock Grid.Row="5" Text="Extras folder" VerticalAlignment="Center"/>
-                <StackPanel Grid.Row="5" Grid.Column="1">
+                <TextBlock x:Name="ExtrasLabel" Grid.Row="5" Text="Extras folder" VerticalAlignment="Center"/>
+                <StackPanel x:Name="ExtrasPanel" Grid.Row="5" Grid.Column="1">
                     <TextBox x:Name="ExtrasBox"/>
                     <CheckBox x:Name="IncludePatchesBox" Content="Preserve patch_* files as non-running archival extras"
                               Foreground="#C9D0DB" Margin="2,3,0,6"/>
                 </StackPanel>
-                <Button Grid.Row="5" Grid.Column="2" Content="Browse…" Click="BrowseExtras_Click"/>
+                <Button x:Name="ExtrasBrowseButton" Grid.Row="5" Grid.Column="2" Content="Browse…" Click="BrowseExtras_Click"/>
 
                 <TextBlock Grid.Row="6" Text="Background" VerticalAlignment="Center"/>
                 <TextBox Grid.Row="6" Grid.Column="1" x:Name="BackgroundBox"/>

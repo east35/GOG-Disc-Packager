@@ -29,8 +29,14 @@ public partial class MainWindow : Window
     private string _stagingRoot;
     private string _installParent;
     private string _temporaryParent;
+    private string _backupParent;
     private long _operationStarted;
     private bool _uninstallerRunning;
+    private GogDownloadEstimate? _keyEstimate;
+    private TaskCompletionSource<string?>? _authenticationCodeCompletion;
+
+    private bool IsKeyMedia => _package.DeploymentType == PackageDeploymentType.GogKeyMedia;
+    private bool DownloadOfflineBackup => IsKeyMedia && DownloadOfflineBackupBox.IsChecked == true;
 
     public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot)
     {
@@ -42,19 +48,28 @@ public partial class MainWindow : Window
         _temporaryParent = AppPaths.Staging;
         _stagingRoot = StagingPath(_temporaryParent);
         _installParent = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\", "GOG Games");
+        _backupParent = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GOG Offline Backups");
 
         InitializeComponent();
+        // Hero (312) + separator (1) + footer (98) + the 12px shadow margin on both edges.
+        ContentScroller.MaxHeight = Math.Max(160d, SystemParameters.WorkArea.Height - 435d);
         EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
             ? Visibility.Visible : Visibility.Collapsed;
         Title = $"Install {_package.Title}";
         TitleText.Text = _package.Title;
-        SizeText.Text = $"Installation files: {FormatBytes(RequiredInstallerBytes())}";
-        RequiredSpaceText.Text = $"Estimated space needed: ~{FormatBytes(RequiredInstallerBytes() * 2)}";
+        SizeText.Text = IsKeyMedia ? "Install size: calculated after GOG sign-in" : $"Installation files: {FormatBytes(RequiredInstallerBytes())}";
+        RequiredSpaceText.Text = IsKeyMedia ? "Disk space required: calculated from the current GOG build" : $"Estimated space needed: ~{FormatBytes(RequiredInstallerBytes() * 2)}";
         LoadArtwork();
         BuildDiscLabels();
         RefreshHome();
         Activated += MainWindow_Activated;
+        ContentRendered += async (_, _) => await LoadKeyEstimateAsync();
         _log.Write($"Launcher opened. Initial media: {_initialDiscRoot ?? "none"}");
+        if (IsKeyMedia)
+            _log.Write(GogGalaxyDetection.FindInstallation() is { } galaxy
+                ? $"GOG Galaxy detected at {galaxy}; independent browser authentication remains available."
+                : "GOG Galaxy was not detected; independent browser authentication will be used.");
     }
 
     private void MainWindow_Activated(object? sender, EventArgs e)
@@ -67,7 +82,22 @@ public partial class MainWindow : Window
     {
         LoadImage(_package.BackgroundFile, BackgroundImage);
         LoadImage(_package.CoverFile, CoverImage);
+        LoadWindowIcon();
         CoverPlaceholder.Visibility = CoverImage.Source is null ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void LoadWindowIcon()
+    {
+        if (string.IsNullOrWhiteSpace(_package.IconFile)) return;
+        var path = SafePaths.ResolveUnderRoot(_cacheRoot, _package.IconFile);
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            Icon = decoder.Frames.OrderByDescending(frame => frame.PixelWidth * frame.PixelHeight).FirstOrDefault();
+        }
+        catch (Exception ex) { _log.Write("Could not load the game icon: " + ex.Message); }
     }
 
     private void LoadImage(string relativePath, Image target)
@@ -114,24 +144,36 @@ public partial class MainWindow : Window
                         File.Exists(_installState.PlayTarget);
 
         ProgressPanel.Visibility = Visibility.Collapsed;
+        AuthenticationSection.Visibility = Visibility.Collapsed;
         OperationActions.Visibility = Visibility.Collapsed;
         DefaultPanel.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
         InstalledPanel.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         DefaultActions.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
         InstalledActions.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
-        var usesTemporaryBackup = !installed && _package.RequiredDiscCount > 1;
-        TemporaryLocationSection.Visibility = usesTemporaryBackup ? Visibility.Visible : Visibility.Collapsed;
-        RequiredSpaceText.Visibility = usesTemporaryBackup ? Visibility.Visible : Visibility.Collapsed;
-        SetExpanded(usesTemporaryBackup);
+        KeyOptionsSection.Visibility = !installed && IsKeyMedia ? Visibility.Visible : Visibility.Collapsed;
+        KeyDestinationSeparator.Visibility = !installed && IsKeyMedia ? Visibility.Visible : Visibility.Collapsed;
+        var usesTemporaryBackup = !installed && (_package.RequiredDiscCount > 1 || DownloadOfflineBackup);
+        TemporaryLocationSection.Visibility = !IsKeyMedia && usesTemporaryBackup ? Visibility.Visible : Visibility.Collapsed;
+        KeyBackupLocationSection.Visibility = !installed && DownloadOfflineBackup ? Visibility.Visible : Visibility.Collapsed;
+        KeyScrollBoundary.Visibility = Visibility.Collapsed;
+        RequiredSpaceText.Visibility = IsKeyMedia
+            ? DownloadOfflineBackup ? Visibility.Visible : Visibility.Collapsed
+            : usesTemporaryBackup ? Visibility.Visible : Visibility.Collapsed;
 
         if (installed)
         {
+            if (IsKeyMedia && !KeyInstallOwnership.IsOwned(_installState!.InstallLocation ?? "", _package))
+                KeyInstallOwnership.AdoptKnownInstall(_installState, _package);
             var location = _installState!.InstallLocation ?? Path.GetDirectoryName(_installState.PlayTarget!) ?? "Installed";
             InstalledLocationText.Text = location;
             InstalledFreeSpaceText.Text = GetFreeSpaceText(location);
-            UninstallButton.Visibility = string.IsNullOrWhiteSpace(_installState.UninstallCommand)
+            var canRemoveKeyInstall = IsKeyMedia && !string.IsNullOrWhiteSpace(_installState.InstallLocation) &&
+                                      KeyInstallOwnership.IsOwned(_installState.InstallLocation, _package);
+            UninstallButton.Visibility = string.IsNullOrWhiteSpace(_installState.UninstallCommand) && !canRemoveKeyInstall
                 ? Visibility.Collapsed : Visibility.Visible;
-            var hasExtras = _package.Files.Any(file => file.Kind == PackageFileKind.Extra);
+            var hasExtras = IsKeyMedia
+                ? _package.GogKeyProduct?.AvailableExtras != 0
+                : _package.Files.Any(file => file.Kind == PackageFileKind.Extra);
             ExtrasButton.Visibility = hasExtras ? Visibility.Visible : Visibility.Collapsed;
             Grid.SetColumnSpan(PlayButton, hasExtras ? 1 : 3);
         }
@@ -141,7 +183,11 @@ public partial class MainWindow : Window
             FreeSpaceText.Text = GetFreeSpaceText(_installParent);
             TemporaryLocationText.Text = _stagingRoot;
             TemporaryFreeSpaceText.Text = GetFreeSpaceText(_temporaryParent);
-            var hasExtras = _package.Files.Any(file => file.Kind == PackageFileKind.Extra);
+            KeyBackupLocationText.Text = BackupRoot;
+            KeyBackupFreeSpaceText.Text = GetFreeSpaceText(_backupParent);
+            var hasExtras = IsKeyMedia
+                ? _package.GogKeyProduct?.AvailableExtras != 0
+                : _package.Files.Any(file => file.Kind == PackageFileKind.Extra);
             PreInstallExtrasButton.Visibility = hasExtras ? Visibility.Visible : Visibility.Collapsed;
             Grid.SetColumnSpan(InstallButton, hasExtras ? 1 : 3);
         }
@@ -156,6 +202,11 @@ public partial class MainWindow : Window
         else ShowInstalling(1);
         try
         {
+            if (IsKeyMedia)
+            {
+                await InstallKeyMediaAsync(_operation.Token);
+                return;
+            }
             if (_package.RequiredDiscCount == 1)
             {
                 var disc = await WaitForDiscAsync(1, _operation.Token);
@@ -188,6 +239,213 @@ public partial class MainWindow : Window
             _operation.Dispose();
             _operation = null;
         }
+    }
+
+    private void DownloadOfflineBackup_Changed(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded && _operation is null)
+        {
+            RefreshHome();
+            ContentScroller.ScrollToTop();
+            UpdateKeySpaceText();
+        }
+    }
+
+    private void ContentScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        KeyScrollBoundary.Visibility = DownloadOfflineBackup && e.ExtentHeight > e.ViewportHeight && e.VerticalOffset > 0.5
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async Task LoadKeyEstimateAsync()
+    {
+        if (!IsKeyMedia || !GogAuthentication.HasCredentials() || _package.GogKeyProduct is null) return;
+        try
+        {
+            _keyEstimate = await new GogDlRuntime().GetEstimateAsync(_package.GogKeyProduct, CancellationToken.None);
+            SizeText.Text = $"Install size: {FormatBytes(_keyEstimate.InstalledBytes)}";
+            UpdateKeySpaceText();
+        }
+        catch (Exception ex) { _log.Write("Could not pre-load current GOG size metadata: " + ex.Message); }
+    }
+
+    private void UpdateKeySpaceText()
+    {
+        RequiredSpaceText.Visibility = DownloadOfflineBackup ? Visibility.Visible : Visibility.Collapsed;
+        if (_keyEstimate is null) return;
+        if (DownloadOfflineBackup)
+            RequiredSpaceText.Text = $"Disk space required: ~{FormatBytes(checked(_keyEstimate.InstalledBytes * 2))} (backup + game)";
+    }
+
+    private async Task InstallKeyMediaAsync(CancellationToken cancellationToken)
+    {
+        var product = _package.GogKeyProduct ?? throw new InvalidDataException("GOG Key Media identity is missing.");
+        await EnsureGogAuthenticationAsync(cancellationToken);
+        if (DownloadOfflineBackup) await DownloadOfflineBackupAndInstallAsync(product, cancellationToken);
+        else await DirectInstallAsync(product, cancellationToken);
+    }
+
+    private async Task EnsureGogAuthenticationAsync(CancellationToken cancellationToken)
+    {
+        var runtime = new GogDlRuntime();
+        await runtime.EnsureCurrentAsync(cancellationToken);
+        if (GogAuthentication.HasCredentials()) return;
+        Process.Start(new ProcessStartInfo(GogAuthentication.LoginUrl) { UseShellExecute = true });
+        var code = await WaitForGogCodeAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(code)) throw new OperationCanceledException("GOG sign-in was cancelled.");
+        AuthenticationContinueButton.IsEnabled = false;
+        EstimateText.Text = "Code accepted, continuing installation…";
+        await runtime.AuthenticateAsync(code, cancellationToken);
+        AuthenticationSection.Visibility = Visibility.Collapsed;
+        if (!GogAuthentication.HasCredentials()) throw new UnauthorizedAccessException("GOG sign-in did not complete.");
+    }
+
+    private async Task DirectInstallAsync(GogKeyProduct product, CancellationToken cancellationToken)
+    {
+        ShowOperationPanels();
+        OperationStatusButton.Content = "Downloading from GOG…";
+        CopyProgress.IsIndeterminate = true;
+        var target = Path.Combine(_installParent, PackageBuilder.SanitizeFileName(_package.Title));
+        if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
+            throw new IOException($"The destination already contains files: {target}");
+        var runtime = new GogDlRuntime();
+        _keyEstimate = await runtime.GetEstimateAsync(product, cancellationToken);
+        EnsureDestinationSpace(target, _keyEstimate.InstalledBytes > 0 ? _keyEstimate.InstalledBytes : _keyEstimate.DownloadBytes);
+        SizeText.Text = $"Install size: {FormatBytes(_keyEstimate.InstalledBytes)}";
+        UpdateKeySpaceText();
+        var progress = new Progress<GogProcessProgress>(value =>
+        {
+            EstimateText.Text = value.Message;
+            if (value.Percent is { } percent) { CopyProgress.IsIndeterminate = false; CopyProgress.Value = percent; }
+        });
+        await runtime.InstallAsync(product, target, progress, cancellationToken);
+        ConfirmDownloadedInstallation(target);
+    }
+
+    private async Task DownloadOfflineBackupAndInstallAsync(GogKeyProduct product, CancellationToken cancellationToken)
+    {
+        ShowOperationPanels();
+        OperationStatusButton.Content = "Downloading GOG backup…";
+        var client = new GogAccountDownloads();
+        var files = (await client.GetFilesAsync(product, cancellationToken)).Where(file => !file.IsExtra).ToList();
+        if (files.Count == 0) throw new InvalidOperationException("GOG did not return a Windows offline installer for this product and language.");
+        var backupRoot = BackupRoot;
+        Directory.CreateDirectory(backupRoot);
+        var total = files.Sum(file => file.Size);
+        _keyEstimate = await new GogDlRuntime().GetEstimateAsync(product, cancellationToken);
+        ValidateBackupAndInstallSpace(backupRoot, total, _keyEstimate.InstalledBytes);
+        SizeText.Text = $"Install size: {FormatBytes(_keyEstimate.InstalledBytes)}";
+        UpdateKeySpaceText();
+
+        // GOG serves the real filename from the downlink, so resolve every name before checking what is on disk.
+        EstimateText.Text = "Checking your GOG downloads…";
+        CopyProgress.IsIndeterminate = true;
+        var planned = new List<(GogAccountFile File, string Path)>();
+        foreach (var file in files)
+            planned.Add((file, await client.ResolveDestinationAsync(
+                file, Path.Combine(backupRoot, SafeDownloadName(file.Name, file.Id)), cancellationToken)));
+
+        if (planned.All(entry => IsCompleteFile(entry.Path, entry.File.Size)) && !ConfirmReuseExistingBackup(backupRoot))
+        {
+            foreach (var entry in planned) File.Delete(entry.Path);
+            _log.Write("Existing offline backup discarded at the user's request; downloading the current build.");
+        }
+
+        long completed = 0;
+        var downloaded = new List<string>();
+        foreach (var (file, destination) in planned)
+        {
+            downloaded.Add(await client.DownloadAsync(file, destination, new Progress<long>(bytes =>
+            {
+                CopyProgress.IsIndeterminate = total <= 0;
+                if (total > 0) CopyProgress.Value = Math.Min(100, (completed + bytes) * 100d / total);
+                EstimateText.Text = $"Downloading {file.Name}";
+            }), cancellationToken));
+            completed += new FileInfo(downloaded[^1]).Length;
+        }
+
+        // Pick from this build's files, never the folder: a kept backup can still hold an older build's setup.
+        var installer = downloaded.Where(path => Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => path, NaturalStringComparer.Instance).FirstOrDefault()
+            ?? throw new FileNotFoundException("The downloaded offline backup did not contain a setup executable.");
+        await RunInstallerAsync(installer, null, cancellationToken);
+        _log.Write($"Offline backup kept at {backupRoot}.");
+    }
+
+    private static bool IsCompleteFile(string path, long expectedSize) =>
+        expectedSize > 0 && File.Exists(path) && new FileInfo(path).Length == expectedSize;
+
+    private bool ConfirmReuseExistingBackup(string backupRoot) =>
+        MessageBox.Show(this,
+            $"A complete offline backup is already stored at:\n\n{backupRoot}\n\n" +
+            "Reuse it, or download the current build from GOG again?\n\n" +
+            "Yes — install from the existing backup\nNo — download again and replace it",
+            "Existing offline backup found", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+
+    private void ConfirmDownloadedInstallation(string target)
+    {
+        var executable = Directory.Exists(target) ? Directory.EnumerateFiles(target, "*.exe", SearchOption.AllDirectories)
+            .FirstOrDefault(path => !Path.GetFileName(path).StartsWith("unins", StringComparison.OrdinalIgnoreCase)) : null;
+        if (executable is null) throw new InvalidOperationException("The GOG download completed, but no installed game executable was found.");
+        KeyInstallOwnership.Mark(target, _package);
+        _installState = InstallDiscovery.SaveManualTarget(_package, executable, target);
+        _log.Write("Direct GOG installation confirmed.");
+        RefreshHome();
+    }
+
+    private static string SafeDownloadName(string name, string id)
+    {
+        var candidate = Path.GetFileName(id);
+        if (string.IsNullOrWhiteSpace(candidate)) candidate = Path.GetFileName(name);
+        return PackageBuilder.SanitizeFileName(candidate);
+    }
+
+    private async Task<string?> WaitForGogCodeAsync(CancellationToken cancellationToken)
+    {
+        ShowOperationPanels();
+        AuthenticationSection.Visibility = Visibility.Visible;
+        AuthenticationCodeText.Clear();
+        AuthenticationContinueButton.IsEnabled = true;
+        AuthenticationCodeText.Focus();
+        EstimateText.Text = "Waiting for GOG sign-in…";
+        OperationStatusButton.Content = "Waiting for URL or Code…";
+        OperationStatusButton.IsEnabled = false;
+        _authenticationCodeCompletion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = cancellationToken.Register(() => _authenticationCodeCompletion.TrySetCanceled(cancellationToken));
+        try { return await _authenticationCodeCompletion.Task; }
+        finally { _authenticationCodeCompletion = null; OperationStatusButton.IsEnabled = true; }
+    }
+
+    private void AuthenticationContinue_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(AuthenticationCodeText.Text)) return;
+        _authenticationCodeCompletion?.TrySetResult(AuthenticationCodeText.Text);
+    }
+
+    private static void EnsureDestinationSpace(string path, long requiredBytes)
+    {
+        var root = Path.GetPathRoot(Path.GetFullPath(path)) ?? throw new IOException("Cannot determine the destination drive.");
+        var available = new DriveInfo(root).AvailableFreeSpace;
+        const long headroom = 1024L * 1024 * 1024;
+        if (requiredBytes > 0 && available < requiredBytes + headroom)
+            throw new IOException($"The destination needs {FormatBytes(requiredBytes + headroom)}, but {root} has {FormatBytes(available)} free.");
+    }
+
+    private void ValidateBackupAndInstallSpace(string backupPath, long backupBytes, long installedBytes)
+    {
+        var backupDrive = Path.GetPathRoot(Path.GetFullPath(backupPath)) ?? throw new IOException("Cannot determine the backup drive.");
+        var installTarget = Path.Combine(_installParent, PackageBuilder.SanitizeFileName(_package.Title));
+        var installDrive = Path.GetPathRoot(Path.GetFullPath(installTarget)) ?? throw new IOException("Cannot determine the destination drive.");
+        const long headroom = 1024L * 1024 * 1024;
+        if (backupDrive.Equals(installDrive, StringComparison.OrdinalIgnoreCase))
+        {
+            var required = checked(backupBytes + installedBytes + headroom);
+            var available = new DriveInfo(backupDrive).AvailableFreeSpace;
+            if (available < required) throw new IOException($"Backup and installation together need {FormatBytes(required)}, but {backupDrive} has {FormatBytes(available)} free.");
+            return;
+        }
+        EnsureDestinationSpace(backupPath, backupBytes);
+        EnsureDestinationSpace(installTarget, installedBytes);
     }
 
     private async Task StageAndInstallAsync(CancellationToken cancellationToken)
@@ -326,7 +584,8 @@ public partial class MainWindow : Window
 
     private void ShowOperationPanels()
     {
-        SetExpanded(false);
+        ContentScroller.ScrollToTop();
+        KeyScrollBoundary.Visibility = Visibility.Collapsed;
         DefaultPanel.Visibility = Visibility.Collapsed;
         InstalledPanel.Visibility = Visibility.Collapsed;
         DefaultActions.Visibility = Visibility.Collapsed;
@@ -370,14 +629,27 @@ public partial class MainWindow : Window
 
     private async void Uninstall_Click(object sender, RoutedEventArgs e)
     {
-        if (_uninstallerRunning || string.IsNullOrWhiteSpace(_installState?.UninstallCommand)) return;
-        if (MessageBox.Show(this, $"Open the registered uninstaller for {_package.Title}?", "Uninstall",
+        if (_uninstallerRunning || _installState is null) return;
+        var ownedKeyInstall = IsKeyMedia && !string.IsNullOrWhiteSpace(_installState.InstallLocation) &&
+                              KeyInstallOwnership.IsOwned(_installState.InstallLocation, _package);
+        if (string.IsNullOrWhiteSpace(_installState.UninstallCommand) && !ownedKeyInstall) return;
+        var question = ownedKeyInstall && string.IsNullOrWhiteSpace(_installState.UninstallCommand)
+            ? $"Uninstall {_package.Title} and remove its downloaded game folder?"
+            : $"Open the registered uninstaller for {_package.Title}?";
+        if (MessageBox.Show(this, question, "Uninstall",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         try
         {
             _uninstallerRunning = true;
             UninstallButton.IsEnabled = false;
-            using var process = Process.Start(ProcessCommands.FromRegisteredCommand(_installState.UninstallCommand))
+            if (ownedKeyInstall && string.IsNullOrWhiteSpace(_installState.UninstallCommand))
+            {
+                var installLocation = _installState.InstallLocation!;
+                await Task.Run(() => KeyInstallOwnership.Remove(installLocation, _package));
+                _log.Write($"Removed owned Key Media installation: {installLocation}");
+                return;
+            }
+            using var process = Process.Start(ProcessCommands.FromRegisteredCommand(_installState.UninstallCommand!))
                 ?? throw new InvalidOperationException("Windows could not start the registered uninstaller.");
             _log.Write("Opened registered uninstaller.");
             await process.WaitForExitAsync();
@@ -398,6 +670,7 @@ public partial class MainWindow : Window
 
     private async void Extras_Click(object sender, RoutedEventArgs e)
     {
+        if (IsKeyMedia) { await DownloadKeyExtrasAsync(); return; }
         var discs = _package.Files.Where(file => file.Kind == PackageFileKind.Extra)
             .Select(file => file.DiscNumber).Distinct().Order().ToList();
         if (discs.Count == 0) return;
@@ -452,17 +725,25 @@ public partial class MainWindow : Window
         TemporaryFreeSpaceText.Text = GetFreeSpaceText(_temporaryParent);
     }
 
+    private void ChooseBackupLocation_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Choose where to keep the offline backup", Multiselect = false };
+        if (Directory.Exists(_backupParent)) dialog.InitialDirectory = _backupParent;
+        if (dialog.ShowDialog(this) != true) return;
+        _backupParent = dialog.FolderName;
+        KeyBackupLocationText.Text = BackupRoot;
+        KeyBackupFreeSpaceText.Text = GetFreeSpaceText(_backupParent);
+    }
+
     private string StagingPath(string parent) => Path.Combine(parent,
         PackageBuilder.SanitizeFileName($"{_package.Title} Backup"));
 
-    private void SetExpanded(bool expanded)
+    private string BackupRoot => Path.Combine(_backupParent, PackageBuilder.SanitizeFileName(_package.Title));
+
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        var newHeight = expanded ? 724d : 564d;
-        ContentRow.Height = new GridLength(expanded ? 303d : 143d);
-        WindowClip.Rect = new Rect(0, 0, Width - 24, newHeight - 24);
-        if (Math.Abs(Height - newHeight) < 0.1) return;
-        if (IsLoaded) Top += (Height - newHeight) / 2d;
-        Height = newHeight;
+        WindowClip.Rect = new Rect(0, 0, ActualWidth - 24, ActualHeight - 24);
+        if (IsLoaded && e.HeightChanged) Top += (e.PreviousSize.Height - e.NewSize.Height) / 2d;
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _operation?.Cancel();
@@ -478,6 +759,43 @@ public partial class MainWindow : Window
             _log.Write("Could not eject optical media: " + ex.Message);
             MessageBox.Show(this, ex.Message, "Disc couldn’t be ejected", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private async Task DownloadKeyExtrasAsync()
+    {
+        if (_operation is not null) return;
+        _operation = new CancellationTokenSource();
+        try
+        {
+            await EnsureGogAuthenticationAsync(_operation.Token);
+            var client = new GogAccountDownloads();
+            var extras = (await client.GetFilesAsync(_package.GogKeyProduct!, _operation.Token)).Where(file => file.IsExtra).ToList();
+            if (extras.Count == 0) { MessageBox.Show(this, "GOG lists no extras for this product.", "Extras", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+            var selected = SelectExtras(extras);
+            if (selected.Count == 0) return;
+            var folder = new OpenFolderDialog { Title = "Choose where to download the selected GOG extras", Multiselect = false };
+            if (folder.ShowDialog(this) != true) return;
+            ShowOperationPanels();
+            foreach (var extra in selected)
+                _ = await client.DownloadAsync(extra, Path.Combine(folder.FolderName, SafeDownloadName(extra.Name, extra.Id)), null, _operation.Token);
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder.FolderName}\"") { UseShellExecute = true });
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "Extras couldn’t be downloaded", MessageBoxButton.OK, MessageBoxImage.Error); }
+        finally { _operation.Dispose(); _operation = null; RefreshHome(); }
+    }
+
+    private IReadOnlyList<GogAccountFile> SelectExtras(IReadOnlyList<GogAccountFile> extras)
+    {
+        var checks = extras.Select(extra => (Extra: extra, Box: new CheckBox { Content = extra.Name, IsChecked = true, Margin = new Thickness(4) })).ToList();
+        var list = new StackPanel { Margin = new Thickness(12) };
+        foreach (var item in checks) list.Children.Add(item.Box);
+        var ok = new Button { Content = "Download selected", IsDefault = true, Margin = new Thickness(12), Width = 150 };
+        var root = new DockPanel(); DockPanel.SetDock(ok, Dock.Bottom); root.Children.Add(ok);
+        root.Children.Add(new ScrollViewer { Content = list, MaxHeight = 420, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var dialog = new Window { Title = $"Extras for {_package.Title}", Owner = this, Content = root, Width = 520, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        ok.Click += (_, _) => dialog.DialogResult = true;
+        return dialog.ShowDialog() == true ? checks.Where(item => item.Box.IsChecked == true).Select(item => item.Extra).ToList() : [];
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
