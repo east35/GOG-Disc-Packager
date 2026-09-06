@@ -23,24 +23,29 @@ public partial class MainWindow : Window
     private readonly string? _initialDiscRoot;
     private readonly FileLog _log;
     private readonly List<TextBlock> _discLabels = [];
+    private string? _activeDiscRoot;
     private InstallState? _installState;
     private CancellationTokenSource? _operation;
     private string _stagingRoot;
     private string _installParent;
     private string _temporaryParent;
     private long _operationStarted;
+    private bool _uninstallerRunning;
 
     public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot)
     {
         _package = package;
         _cacheRoot = cacheRoot;
         _initialDiscRoot = initialDiscRoot;
+        _activeDiscRoot = initialDiscRoot;
         _log = new FileLog(AppPaths.PackageLog(package.PackageId));
         _temporaryParent = AppPaths.Staging;
         _stagingRoot = StagingPath(_temporaryParent);
         _installParent = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\", "GOG Games");
 
         InitializeComponent();
+        EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
+            ? Visibility.Visible : Visibility.Collapsed;
         Title = $"Install {_package.Title}";
         TitleText.Text = _package.Title;
         SizeText.Text = $"Installation files: {FormatBytes(RequiredInstallerBytes())}";
@@ -48,7 +53,14 @@ public partial class MainWindow : Window
         LoadArtwork();
         BuildDiscLabels();
         RefreshHome();
+        Activated += MainWindow_Activated;
         _log.Write($"Launcher opened. Initial media: {_initialDiscRoot ?? "none"}");
+    }
+
+    private void MainWindow_Activated(object? sender, EventArgs e)
+    {
+        if (_operation is null && !_uninstallerRunning)
+            RefreshHome();
     }
 
     private void LoadArtwork()
@@ -82,7 +94,7 @@ public partial class MainWindow : Window
             DiscLabelsGrid.ColumnDefinitions.Add(new ColumnDefinition());
             var label = new TextBlock
             {
-                Text = $"Disc {index + 1}",
+                Text = count == 1 ? "Installing…" : $"Disc {index + 1}",
                 FontSize = 14,
                 Foreground = index == 0 ? ActiveLabelBrush : MutedLabelBrush,
                 HorizontalAlignment = index == 0 ? HorizontalAlignment.Left :
@@ -222,7 +234,13 @@ public partial class MainWindow : Window
         {
             cancellationToken.ThrowIfCancellationRequested();
             var disc = DiscMedia.Find(_package.PackageId, discNumber, _initialDiscRoot);
-            if (disc is not null) return disc;
+            if (disc is not null)
+            {
+                _activeDiscRoot = disc.Root;
+                EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
+                    ? Visibility.Visible : Visibility.Collapsed;
+                return disc;
+            }
             ShowWaiting(discNumber);
             await Task.Delay(900, cancellationToken);
         }
@@ -350,13 +368,32 @@ public partial class MainWindow : Window
         _log.Write($"Launched game: {_installState.PlayTarget}");
     }
 
-    private void Uninstall_Click(object sender, RoutedEventArgs e)
+    private async void Uninstall_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_installState?.UninstallCommand)) return;
+        if (_uninstallerRunning || string.IsNullOrWhiteSpace(_installState?.UninstallCommand)) return;
         if (MessageBox.Show(this, $"Open the registered uninstaller for {_package.Title}?", "Uninstall",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        Process.Start(ProcessCommands.FromRegisteredCommand(_installState.UninstallCommand));
-        _log.Write("Opened registered uninstaller.");
+        try
+        {
+            _uninstallerRunning = true;
+            UninstallButton.IsEnabled = false;
+            using var process = Process.Start(ProcessCommands.FromRegisteredCommand(_installState.UninstallCommand))
+                ?? throw new InvalidOperationException("Windows could not start the registered uninstaller.");
+            _log.Write("Opened registered uninstaller.");
+            await process.WaitForExitAsync();
+            _log.Write($"Registered uninstaller exited with code {process.ExitCode}; refreshing install status.");
+        }
+        catch (Exception ex)
+        {
+            _log.Write("Could not monitor the registered uninstaller: " + ex.Message);
+            MessageBox.Show(this, ex.Message, "Uninstaller couldn’t start", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _uninstallerRunning = false;
+            RefreshHome();
+            UninstallButton.IsEnabled = true;
+        }
     }
 
     private async void Extras_Click(object sender, RoutedEventArgs e)
@@ -420,15 +457,29 @@ public partial class MainWindow : Window
 
     private void SetExpanded(bool expanded)
     {
-        var newHeight = expanded ? 700d : 540d;
+        var newHeight = expanded ? 724d : 564d;
         ContentRow.Height = new GridLength(expanded ? 303d : 143d);
-        WindowClip.Rect = new Rect(0, 0, Width, newHeight);
+        WindowClip.Rect = new Rect(0, 0, Width - 24, newHeight - 24);
         if (Math.Abs(Height - newHeight) < 0.1) return;
         if (IsLoaded) Top += (Height - newHeight) / 2d;
         Height = newHeight;
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _operation?.Cancel();
+    private void Eject_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            OpticalDriveEjector.Eject(_activeDiscRoot);
+            _log.Write($"Ejected optical media from {Path.GetPathRoot(_activeDiscRoot)}.");
+        }
+        catch (Exception ex)
+        {
+            _log.Write("Could not eject optical media: " + ex.Message);
+            MessageBox.Show(this, ex.Message, "Disc couldn’t be ejected", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void Hero_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

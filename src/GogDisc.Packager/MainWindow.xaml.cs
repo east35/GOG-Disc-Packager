@@ -160,6 +160,8 @@ public partial class MainWindow : Window
             MessageBox.Show(this, $"Disc folders are ready:\n\n{result.PackageDirectory}", "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);
             if (OpenWhenCompleteBox.IsChecked == true)
                 Process.Start(new ProcessStartInfo("explorer.exe", $"\"{result.PackageDirectory}\"") { UseShellExecute = true });
+            if (ResetAfterBuildBox.IsChecked == true)
+                ClearBackupInputs();
         }
         catch (OperationCanceledException)
         {
@@ -193,6 +195,23 @@ public partial class MainWindow : Window
         _family = null;
         _plan = null;
         if (BuildButton is not null) BuildButton.IsEnabled = false;
+    }
+
+    private void ClearBackupInputs()
+    {
+        SetupBox.Clear();
+        TitleBox.Clear();
+        VersionBox.Clear();
+        ProductTypeBox.SelectedIndex = 0;
+        ExtrasBox.Clear();
+        IncludePatchesBox.IsChecked = false;
+        BackgroundBox.Clear();
+        CoverBox.Clear();
+        IconBox.Clear();
+        SummaryText.Text = "Select a stock setup_*.exe, then scan the package.";
+        BuildProgress.Value = 0;
+        ResetScan();
+        StatusText.Text = "Ready for a new backup";
     }
 
     private long GetCapacity()

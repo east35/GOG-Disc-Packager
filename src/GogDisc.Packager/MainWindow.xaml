@@ -92,6 +92,8 @@
                     <TextBox x:Name="OutputBox"/>
                     <CheckBox x:Name="OpenWhenCompleteBox" Content="Open package folder when complete"
                               IsChecked="True" Foreground="#C9D0DB" Margin="2,3,0,6"/>
+                    <CheckBox x:Name="ResetAfterBuildBox" Content="Clear backup inputs after build (keep output folder)"
+                              Foreground="#C9D0DB" Margin="2,0,0,6"/>
                 </StackPanel>
                 <Button Grid.Row="9" Grid.Column="2" Content="Browse…" Click="BrowseOutput_Click"/>
 
