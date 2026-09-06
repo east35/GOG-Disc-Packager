@@ -2,7 +2,7 @@
 
 GOG Disc Packager creates two kinds of physical GOG release: traditional offline media containing an original GOG installer backup, and compact **GOG Key Media** that stores durable product identity and retrieves an owned game from GOG at installation time.
 
-[Download GOG Disc Packager v1.0.0 for Windows](https://github.com/east35/GOG-Disc-Packager/raw/main/build/GOG-Disc-Packager-v1.0.0-win-x64.zip)
+[Download GOG Disc Packager v1.1.0 for Windows](https://github.com/east35/GOG-Disc-Packager/raw/main/build/GOG-Disc-Packager-v1.1.0-win-x64.zip)
 
 > This is an independent preservation tool. It is not affiliated with or endorsed by GOG, CD Projekt, or any game publisher. You must supply your own legally obtained GOG offline installers and artwork.
 
@@ -61,7 +61,7 @@ Building from source requires:
 8. Review the detected files, excluded patches, required disc count, and disc layout.
 9. Choose **Build disc folders**. The completed package directory opens automatically unless that option is disabled.
 
-For **GOG Key Media**, choose that deployment type, enter a game title or paste its GOG store URL, then select the matched product. The internal product ID and store slug are resolved automatically. No local setup file or media-capacity planning is required. Burn or copy the contents of the generated `Key Media` folder to any filesystem-based physical medium.
+For **GOG Key Media**, choose that deployment type, enter a game title or paste its GOG store URL, then select the matched product. The internal product ID and store slug are resolved automatically. No local setup file or media-capacity planning is required. The build is written to `<Title> GOG (Key Media)`; burn or copy the contents of the `Key Media` folder inside it to any filesystem-based physical medium.
 
 ## GOG Key Media installation
 
