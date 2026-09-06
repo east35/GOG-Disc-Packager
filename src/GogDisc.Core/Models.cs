@@ -14,6 +14,12 @@ public enum PackageDeploymentType
     GogKeyMedia
 }
 
+public enum KeyDiscRole
+{
+    BaseGame,
+    Dlc
+}
+
 public sealed class GogKeyProduct
 {
     public string Format { get; set; } = "gog-key-disc";
@@ -25,6 +31,21 @@ public sealed class GogKeyProduct
     public string Language { get; set; } = "en";
     public int? AvailableExtras { get; set; }
 
+    /// <summary>False for products GOG serves only as offline installers, which the launcher cannot install directly.</summary>
+    public bool? SupportsDirectDownload { get; set; }
+
+    public KeyDiscRole DiscRole { get; set; }
+
+    /// <summary>The base game a DLC disc installs into. GOG resolves DLC through the base product, never on its own.</summary>
+    public string? BaseProductId { get; set; }
+    public string? BaseTitle { get; set; }
+
+    /// <summary>DLC product IDs this disc installs. Empty on a base disc means the base game alone.</summary>
+    public List<string> IncludedDlcs { get; set; } = [];
+
+    /// <summary>The product ID to hand gogdl, which addresses DLC through its base game.</summary>
+    public string DownloadProductId => DiscRole == KeyDiscRole.Dlc ? BaseProductId ?? ProductId : ProductId;
+
     public void Validate()
     {
         if (Format != "gog-key-disc" || Schema != 1)
@@ -34,8 +55,17 @@ public sealed class GogKeyProduct
         if (string.IsNullOrWhiteSpace(Title)) throw new InvalidDataException("The GOG product title is missing.");
         if (Platform != "windows") throw new InvalidDataException("Only Windows GOG Key Media is currently supported.");
         if (string.IsNullOrWhiteSpace(Language)) throw new InvalidDataException("The GOG product language is missing.");
+        if (IncludedDlcs.Any(id => string.IsNullOrWhiteSpace(id) || !id.All(char.IsDigit)))
+            throw new InvalidDataException("A DLC product ID on this disc is invalid.");
+        if (DiscRole != KeyDiscRole.Dlc) return;
+        if (string.IsNullOrWhiteSpace(BaseProductId) || !BaseProductId.All(char.IsDigit))
+            throw new InvalidDataException("A DLC disc must name the base game it installs into.");
+        if (IncludedDlcs.Count == 0)
+            throw new InvalidDataException("A DLC disc must name at least one DLC product.");
     }
 }
+
+public sealed record GogDlc(string ProductId, string Title);
 
 public enum PackageFileKind
 {
@@ -69,15 +99,24 @@ public sealed class PackageManifest
     public List<PackageFileEntry> Files { get; set; } = [];
 }
 
-public sealed class KeyMediaBuildRequest
+public sealed class KeyMediaDisc
 {
     public required GogKeyProduct Product { get; init; }
-    public required string OutputDirectory { get; init; }
-    public required string LauncherExecutable { get; init; }
-    public string Version { get; init; } = "Current GOG build";
     public string? BackgroundImage { get; init; }
     public string? CoverImage { get; init; }
     public string? IconImage { get; init; }
+}
+
+public sealed class KeyMediaBuildRequest
+{
+    /// <summary>One entry builds a single disc; several build a numbered set, one product per disc.</summary>
+    public required IReadOnlyList<KeyMediaDisc> Discs { get; init; }
+    public required string OutputDirectory { get; init; }
+    public required string LauncherExecutable { get; init; }
+    public string Version { get; init; } = "Current GOG build";
+
+    /// <summary>Names the output folder. Defaults to the first disc's title.</summary>
+    public string? SetTitle { get; init; }
 }
 
 public sealed class DiscManifest

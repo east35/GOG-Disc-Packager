@@ -124,7 +124,7 @@
                     <Border x:Name="KeyDestinationSeparator" Visibility="Collapsed" Height="1" Background="#D5D5D5" Margin="-24,0,-24,16"/>
 
                     <StackPanel Style="{StaticResource Section}">
-                        <TextBlock Text="We’ll install this game to a new folder in this location:" Style="{StaticResource SectionLabel}"/>
+                        <TextBlock x:Name="DestinationLabel" Text="We’ll install this game to a new folder in this location:" Style="{StaticResource SectionLabel}"/>
                         <Border Style="{StaticResource Card}">
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -132,7 +132,7 @@
                                     <TextBlock x:Name="DestinationText" Style="{StaticResource CardText}" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock x:Name="FreeSpaceText" Style="{StaticResource CardSubtext}" Foreground="#6C6C6C"/>
                                 </StackPanel>
-                                <Button Grid.Column="1" Style="{StaticResource CardActionButton}" Margin="16,0,0,0"
+                                <Button x:Name="ChooseDestinationButton" Grid.Column="1" Style="{StaticResource CardActionButton}" Margin="16,0,0,0"
                                         Click="ChooseInstallLocation_Click" ToolTip="Choose installation location">
                                     <Path Data="M 1,2 L 7,8 L 13,2" Stroke="#171717" StrokeThickness="1.7"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>

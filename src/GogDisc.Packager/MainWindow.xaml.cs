@@ -15,6 +15,8 @@ public partial class MainWindow : Window
     private PackagePlan? _plan;
     private CancellationTokenSource? _cancellation;
     private GogCatalogProduct? _resolvedGame;
+    private List<GogKeyProduct>? _validatedKeyDiscs;
+    private readonly List<DlcOption> _dlcs = [];
 
     public MainWindow()
     {
@@ -90,9 +92,23 @@ public partial class MainWindow : Window
     {
         try
         {
-            StatusText.Text = "Searching the GOG catalog…";
-            var products = await new GogCatalogClient().SearchAsync(GameLookupBox.Text);
-            if (products.Count == 0) throw new InvalidOperationException("No matching GOG products were found. Try the full store URL or a more exact title.");
+            // The public catalog lists bundle SKUs that carry no build and omits some base games,
+            // so search the account's own library — you must own a title to package it anyway.
+            IReadOnlyList<GogCatalogProduct> products;
+            if (GogAuthentication.HasCredentials())
+            {
+                StatusText.Text = "Searching your GOG library…";
+                products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None);
+                if (products.Count == 0)
+                    throw new InvalidOperationException(
+                        $"No owned GOG game matches \"{GameLookupBox.Text.Trim()}\". Only games on your GOG account can be packaged.");
+            }
+            else
+            {
+                StatusText.Text = "Searching the GOG catalog…";
+                products = await new GogCatalogClient().SearchAsync(GameLookupBox.Text);
+                if (products.Count == 0) throw new InvalidOperationException("No matching GOG products were found. Try the full store URL or a more exact title.");
+            }
             ResolvedGameBox.ItemsSource = products;
             ResolvedGameBox.SelectedIndex = 0;
             StatusText.Text = products.Count == 1 ? "GOG product found" : $"Choose from {products.Count} matching GOG products";
@@ -100,13 +116,80 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex.Message); }
     }
 
-    private void ResolvedGameBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void ResolvedGameBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _resolvedGame = ResolvedGameBox.SelectedItem as GogCatalogProduct;
         if (_resolvedGame is null) return;
         TitleBox.Text = _resolvedGame.Title;
         ResetScan();
+        await LoadOwnedDlcsAsync();
     }
+
+    private async Task LoadOwnedDlcsAsync()
+    {
+        _dlcs.Clear();
+        DlcList.ItemsSource = null;
+        if (_resolvedGame is null || !IsKeyMedia) { UpdateKeyLayoutHint(); return; }
+        if (!GogAuthentication.HasCredentials())
+        {
+            DlcHint.Text = "Sign in to GOG to list the add-ons your account owns.";
+            UpdateKeyLayoutHint();
+            return;
+        }
+        try
+        {
+            DlcHint.Text = "Checking which add-ons your account owns…";
+            var owned = await new GogDlRuntime().GetOwnedDlcsAsync(GetKeyProduct(), CancellationToken.None);
+            foreach (var dlc in owned)
+                _dlcs.Add(new DlcOption { ProductId = dlc.ProductId, Title = dlc.Title, ArtVisibility = ArtVisibility });
+            DlcList.ItemsSource = _dlcs;
+            DlcHint.Text = _dlcs.Count == 0
+                ? "Your account owns no add-ons for this game."
+                : $"{_dlcs.Count} add-on(s) owned. Clear any you do not want on the media.";
+        }
+        catch (Exception ex)
+        {
+            DlcHint.Text = "Add-ons could not be listed: " + ex.Message;
+        }
+        UpdateKeyLayoutHint();
+    }
+
+    private Visibility ArtVisibility => MultiDiscOption?.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+    private void KeyLayout_Changed(object sender, RoutedEventArgs e)
+    {
+        foreach (var dlc in _dlcs) dlc.ArtVisibility = ArtVisibility;
+        UpdateKeyLayoutHint();
+        ResetScan();
+    }
+
+    private void UpdateKeyLayoutHint()
+    {
+        if (KeyLayoutHint is null) return;
+        var selected = _dlcs.Count(dlc => dlc.Selected);
+        KeyLayoutHint.Text = MultiDiscOption?.IsChecked == true
+            ? selected == 0
+                ? "One disc will be built. Select add-ons above to add their discs."
+                : $"{selected + 1} discs: Disc 1 is the base game, then one per add-on. Each add-on disc installs into the game folder Disc 1 creates."
+            : selected == 0
+                ? "One disc installing the base game only."
+                : $"One disc installing the base game and {selected} add-on(s).";
+    }
+
+    private void BrowseDlcArt_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not DlcOption dlc) return;
+        // Same order as the main form: background, cover, icon.
+        var background = new OpenFileDialog { Title = $"Background art for the {dlc.Title} disc (cancel to skip)", Filter = ImageFilter };
+        if (background.ShowDialog() == true) dlc.BackgroundImage = background.FileName;
+        var cover = new OpenFileDialog { Title = $"Cover art for the {dlc.Title} disc (cancel to skip)", Filter = ImageFilter };
+        if (cover.ShowDialog() == true) dlc.CoverImage = cover.FileName;
+        var icon = new OpenFileDialog { Title = $"Disc icon for {dlc.Title} (cancel to skip)", Filter = "Icons and images|*.ico;*.png;*.jpg;*.jpeg" };
+        if (icon.ShowDialog() == true) dlc.IconImage = icon.FileName;
+        ResetScan();
+    }
+
+    private const string ImageFilter = "Images|*.png;*.jpg;*.jpeg;*.bmp";
 
     private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 1;
 
@@ -115,7 +198,10 @@ public partial class MainWindow : Window
         if (KeyIdentityPanel is null) return;
         var key = IsKeyMedia;
         KeyIdentityPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel, ExtrasLabel, ExtrasPanel, ExtrasBrowseButton })
+        KeyDlcPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
+        // Key Media derives the product type from each disc's role, so the picker would be a no-op there.
+        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel,
+                     ExtrasLabel, ExtrasPanel, ExtrasBrowseButton, ProductTypeLabel, ProductTypeBox })
             control.Visibility = key ? Visibility.Collapsed : Visibility.Visible;
         SummaryText.Text = key
             ? "Enter the durable GOG product identity. The generated media will contain no game payload or account data."
@@ -125,9 +211,9 @@ public partial class MainWindow : Window
         ResetScan();
     }
 
-    private void Scan_Click(object sender, RoutedEventArgs e) => ScanPackage();
+    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanPackageAsync();
 
-    private bool ScanPackage()
+    private async Task<bool> ScanPackageAsync()
     {
         try
         {
@@ -137,9 +223,8 @@ public partial class MainWindow : Window
                 product.Validate();
                 _family = null;
                 _plan = null;
-                SummaryText.Text = $"GOG Key Media for {product.Title}\nProduct ID: {product.ProductId}\nPlatform/language: {product.Platform}/{product.Language}\n\nPayload: launcher and durable product identity only.";
+                if (!await ValidateKeyProductAsync(product)) return false;
                 BuildButton.IsEnabled = true;
-                StatusText.Text = "Key Media identity is valid";
                 return true;
             }
             _family = SetupFamilyScanner.Scan(SetupBox.Text, EmptyToNull(ExtrasBox.Text), IncludePatchesBox.IsChecked == true);
@@ -180,9 +265,87 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Confirms GOG can actually deliver this product before anything is burned to physical media.</summary>
+    private async Task<bool> ValidateKeyProductAsync(GogKeyProduct product)
+    {
+        var selected = _dlcs.Where(dlc => dlc.Selected).ToList();
+        var split = MultiDiscOption.IsChecked == true;
+        var discs = BuildDiscProducts(product, selected, split);
+        var heading = $"GOG Key Media for {product.Title}\nProduct ID: {product.ProductId}\n" +
+                      $"Platform/language: {product.Platform}/{product.Language}\n" +
+                      $"Layout: {(split ? $"{discs.Count} disc(s), one per product" : "one disc")}\n\n";
+
+        if (!GogAuthentication.HasCredentials())
+        {
+            _validatedKeyDiscs = discs;
+            SummaryText.Text = heading + "Not signed in to GOG, so this product could not be checked.\n" +
+                "Sign in and validate again before burning — some store SKUs carry no installable build.";
+            StatusText.Text = "Key Media identity is valid, but unverified";
+            return true;
+        }
+
+        StatusText.Text = "Checking what GOG can deliver for this product…";
+        GogKeyAvailability availability;
+        try { availability = await GogKeyAvailability.ProbeAsync(product, _cancellation?.Token ?? CancellationToken.None); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { ResetScan(); ShowError(ex.Message); return false; }
+
+        foreach (var disc in discs)
+        {
+            disc.SupportsDirectDownload = availability.DirectDownload;
+            disc.AvailableExtras = availability.Extras;
+        }
+        _validatedKeyDiscs = discs;
+
+        if (!availability.AnyInstallPath)
+        {
+            ResetScan();
+            ShowError($"GOG has no installable build and no offline installer for \"{product.Title}\" " +
+                      $"(product {product.ProductId}).\n\nThis is usually a bundle or edition SKU rather than the game " +
+                      "itself. Search again and pick the entry that installs, then validate before burning.");
+            return false;
+        }
+
+        SummaryText.Text = heading +
+            $"Direct install: {(availability.DirectDownload ? "available" : "NOT available — the launcher will use the offline installer")}\n" +
+            $"Offline installer: {(availability.OfflineBackup ? $"{availability.InstallerFiles} file(s)" : "not available")}\n" +
+            $"Extras: {availability.Extras}\n\n" +
+            string.Join("\n", discs.Select((disc, index) =>
+                $"Disc {index + 1}: {disc.Title}" +
+                (disc.DiscRole == KeyDiscRole.Dlc ? "  (installs into the Disc 1 game folder)" : ""))) +
+            "\n\nPayload: launcher and durable product identity only.";
+        StatusText.Text = availability.DirectDownload ? "Key Media verified against GOG" : "Verified — offline installer only";
+        return true;
+    }
+
+    /// <summary>One disc carrying every selected add-on, or a numbered set with the base game first.</summary>
+    private static List<GogKeyProduct> BuildDiscProducts(GogKeyProduct baseProduct, List<DlcOption> selected, bool split)
+    {
+        if (!split)
+        {
+            baseProduct.IncludedDlcs = selected.Select(dlc => dlc.ProductId).ToList();
+            return [baseProduct];
+        }
+        baseProduct.IncludedDlcs = [];
+        var discs = new List<GogKeyProduct> { baseProduct };
+        discs.AddRange(selected.Select(dlc => new GogKeyProduct
+        {
+            ProductId = dlc.ProductId,
+            Slug = baseProduct.Slug,
+            Title = dlc.Title,
+            Platform = baseProduct.Platform,
+            Language = baseProduct.Language,
+            DiscRole = KeyDiscRole.Dlc,
+            BaseProductId = baseProduct.ProductId,
+            BaseTitle = baseProduct.Title,
+            IncludedDlcs = [dlc.ProductId]
+        }));
+        return discs;
+    }
+
     private async void Build_Click(object sender, RoutedEventArgs e)
     {
-        if (!ScanPackage()) return;
+        if (!await ScanPackageAsync()) return;
         if (string.IsNullOrWhiteSpace(TitleBox.Text) || (!IsKeyMedia && string.IsNullOrWhiteSpace(VersionBox.Text)))
         {
             ShowError("Enter a title and version before building.");
@@ -190,6 +353,7 @@ public partial class MainWindow : Window
         }
 
         SetBusy(true);
+        ActivityPanel.Visibility = Visibility.Visible;
         _cancellation = new CancellationTokenSource();
         string? temporaryIcon = null;
         try
@@ -197,26 +361,36 @@ public partial class MainWindow : Window
             var preparedIcon = IconPreparation.Prepare(EmptyToNull(IconBox.Text), out temporaryIcon);
             if (IsKeyMedia)
             {
-                var product = GetKeyProduct();
-                if (GogAuthentication.HasCredentials())
-                {
-                    StatusText.Text = "Checking available GOG extras…";
-                    product.AvailableExtras = (await new GogAccountDownloads().GetFilesAsync(product, _cancellation.Token))
-                        .Count(file => file.IsExtra);
-                }
+                var discProducts = _validatedKeyDiscs ?? [GetKeyProduct()];
+                var artByProductId = _dlcs.ToDictionary(dlc => dlc.ProductId);
+                var discs = discProducts.Select(disc => disc.DiscRole == KeyDiscRole.Dlc && artByProductId.TryGetValue(disc.ProductId, out var art)
+                    ? new KeyMediaDisc
+                    {
+                        Product = disc,
+                        BackgroundImage = art.BackgroundImage,
+                        CoverImage = art.CoverImage,
+                        IconImage = IconPreparation.Prepare(art.IconImage, out _)
+                    }
+                    : new KeyMediaDisc
+                    {
+                        Product = disc,
+                        BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                        CoverImage = EmptyToNull(CoverBox.Text),
+                        IconImage = preparedIcon
+                    }).ToList();
                 var keyResult = await KeyMediaBuilder.BuildAsync(new KeyMediaBuildRequest
                 {
-                    Product = product,
+                    Discs = discs,
+                    SetTitle = discProducts[0].Title,
                     Version = string.IsNullOrWhiteSpace(VersionBox.Text) ? "Current GOG build" : VersionBox.Text,
                     OutputDirectory = OutputBox.Text,
-                    LauncherExecutable = LauncherBox.Text,
-                    BackgroundImage = EmptyToNull(BackgroundBox.Text),
-                    CoverImage = EmptyToNull(CoverBox.Text),
-                    IconImage = preparedIcon
+                    LauncherExecutable = LauncherBox.Text
                 }, _cancellation.Token);
-                Log(product.AvailableExtras is null
-                    ? "Extras availability could not be recorded because GOG was not signed in on this computer."
-                    : $"Recorded {product.AvailableExtras.Value} available GOG extra(s)." );
+                Log(discProducts[0].SupportsDirectDownload is null
+                    ? "GOG was not signed in, so direct-install support and extras were not verified."
+                    : $"Verified against GOG: direct install {(discProducts[0].SupportsDirectDownload!.Value ? "available" : "unavailable")}, " +
+                      $"{discProducts[0].AvailableExtras ?? 0} extra(s).");
+                Log($"Built {discs.Count} Key Media disc(s).");
                 CompleteBuild(keyResult);
                 return;
             }
@@ -271,6 +445,7 @@ public partial class MainWindow : Window
     {
         _family = null;
         _plan = null;
+        _validatedKeyDiscs = null;
         if (BuildButton is not null) BuildButton.IsEnabled = false;
     }
 
@@ -362,6 +537,8 @@ public partial class MainWindow : Window
 
     private void Log(string message)
     {
+        // The log earns its space only once there is something in it; until then the form gets the room.
+        ActivityPanel.Visibility = Visibility.Visible;
         LogBox.AppendText($"[{DateTime.Now:T}] {message}{Environment.NewLine}");
         LogBox.ScrollToEnd();
     }

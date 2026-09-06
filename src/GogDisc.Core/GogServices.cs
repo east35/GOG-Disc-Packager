@@ -8,7 +8,8 @@ namespace GogDisc.Core;
 
 public sealed record GogDownloadEstimate(long DownloadBytes, long InstalledBytes);
 public sealed record GogAccountFile(string Id, string Name, string Downlink, long Size, bool IsExtra);
-public sealed record GogProcessProgress(string Message, double? Percent = null);
+/// <summary><paramref name="Message"/> is gogdl's raw line — diagnostic only, never surface it to a user.</summary>
+public sealed record GogProcessProgress(string Message, double? Percent = null, TimeSpan? Remaining = null);
 public sealed record GogCatalogProduct(string ProductId, string Slug, string Title, string ProductType)
 {
     public override string ToString() => $"{Title} ({ProductType})";
@@ -138,16 +139,75 @@ public sealed class GogDlRuntime
     public async Task AuthenticateAsync(string authorizationCode, CancellationToken cancellationToken) =>
         await RunAsync(["auth", "--code", GogAuthentication.ExtractAuthorizationCode(authorizationCode)], null, cancellationToken);
 
+    /// <summary>Renews the stored access token, which GOG expires after an hour.</summary>
+    public async Task RefreshAuthenticationAsync(CancellationToken cancellationToken) =>
+        await RunAsync(["auth"], null, cancellationToken);
+
     public async Task<GogDownloadEstimate> GetEstimateAsync(GogKeyProduct product, CancellationToken cancellationToken)
     {
-        var output = await RunAsync(["info", product.ProductId, "--platform", product.Platform, "--lang", product.Language, "--skip-dlcs"], null, cancellationToken);
-        return ParseDownloadEstimate(output, product.Language);
+        // Ask for DLC metadata whenever this disc carries add-ons, so their sizes are available to sum.
+        var dlcArguments = product.IncludedDlcs.Count == 0
+            ? new[] { "--skip-dlcs" }
+            : ["--dlcs", string.Join(",", product.IncludedDlcs)];
+        var output = await RunAsync(["info", product.DownloadProductId, "--platform", product.Platform,
+            "--lang", product.Language, .. dlcArguments], null, cancellationToken);
+        return ParseDownloadEstimate(output, product);
     }
+
+    /// <summary>Lists the DLCs the signed-in account owns for a base game.</summary>
+    public async Task<IReadOnlyList<GogDlc>> GetOwnedDlcsAsync(GogKeyProduct product, CancellationToken cancellationToken)
+    {
+        var output = await RunAsync(["info", product.ProductId, "--platform", product.Platform,
+            "--lang", product.Language, "--with-dlcs"], null, cancellationToken);
+        using var json = ParseLastJson(output);
+        if (!json.RootElement.TryGetProperty("dlcs", out var dlcs) || dlcs.ValueKind != JsonValueKind.Array) return [];
+        return dlcs.EnumerateArray()
+            .Select(item => new GogDlc(
+                item.TryGetProperty("id", out var id) ? id.ToString() : "",
+                item.TryGetProperty("title", out var title) ? title.GetString() ?? "" : ""))
+            .Where(dlc => !string.IsNullOrWhiteSpace(dlc.ProductId))
+            .ToList();
+    }
+
+    /// <summary>gogdl's download SYNCS a folder to a target state — anything outside that state is DELETED.
+    /// Never pass --dlc-only: it makes the base game "extra", and gogdl removes the entire installation.
+    ///
+    /// --with-dlcs and --dlcs are separate switches: --dlcs only NARROWS the set, while --with-dlcs is what
+    /// enables DLC at all (gogdl returns no owned DLCs without it). Passing --dlcs alone silently installs none.</summary>
+    private static string[] DlcArguments(GogKeyProduct product) => product.IncludedDlcs.Count == 0
+        ? ["--skip-dlcs"]
+        : ["--with-dlcs", "--dlcs", string.Join(",", product.IncludedDlcs)];
 
     public static GogDownloadEstimate ParseDownloadEstimate(string output, string language)
     {
         using var json = ParseLastJson(output);
+        return ReadSizes(json.RootElement, language);
+    }
+
+    /// <summary>gogdl reports the base game's size at the top level whatever the DLC flags say, and each add-on's
+    /// size under "dlcs". Summing the right parts keeps the free-space check honest for every disc layout.</summary>
+    public static GogDownloadEstimate ParseDownloadEstimate(string output, GogKeyProduct product)
+    {
+        using var json = ParseLastJson(output);
         var root = json.RootElement;
+        var total = product.DiscRole == KeyDiscRole.Dlc
+            ? new GogDownloadEstimate(0, 0)
+            : ReadSizes(root, product.Language);
+        if (product.IncludedDlcs.Count == 0 ||
+            !root.TryGetProperty("dlcs", out var dlcs) || dlcs.ValueKind != JsonValueKind.Array) return total;
+        foreach (var dlc in dlcs.EnumerateArray())
+        {
+            var id = dlc.TryGetProperty("id", out var value) ? value.ToString() : "";
+            if (!product.IncludedDlcs.Contains(id)) continue;
+            var size = ReadSizes(dlc, product.Language);
+            total = new GogDownloadEstimate(total.DownloadBytes + size.DownloadBytes,
+                total.InstalledBytes + size.InstalledBytes);
+        }
+        return total;
+    }
+
+    private static GogDownloadEstimate ReadSizes(JsonElement root, string language)
+    {
         if (root.TryGetProperty("size", out var sizes) && sizes.ValueKind == JsonValueKind.Object)
         {
             var common = sizes.TryGetProperty("*", out var all) ? ReadSizeGroup(all) : new GogDownloadEstimate(0, 0);
@@ -165,13 +225,13 @@ public sealed class GogDlRuntime
 
     public async Task InstallAsync(GogKeyProduct product, string finalGameDirectory,
         IProgress<GogProcessProgress>? progress, CancellationToken cancellationToken) =>
-        _ = await RunAsync(["download", product.ProductId, "--path", finalGameDirectory, "--platform", product.Platform,
-            "--lang", product.Language, "--skip-dlcs"], progress, cancellationToken);
+        _ = await RunAsync(["download", product.DownloadProductId, "--path", finalGameDirectory, "--platform", product.Platform,
+            "--lang", product.Language, .. DlcArguments(product)], progress, cancellationToken);
 
     public async Task RepairAsync(GogKeyProduct product, string finalGameDirectory,
         IProgress<GogProcessProgress>? progress, CancellationToken cancellationToken) =>
-        _ = await RunAsync(["repair", product.ProductId, "--path", finalGameDirectory, "--platform", product.Platform,
-            "--lang", product.Language, "--skip-dlcs"], progress, cancellationToken);
+        _ = await RunAsync(["repair", product.DownloadProductId, "--path", finalGameDirectory, "--platform", product.Platform,
+            "--lang", product.Language, .. DlcArguments(product)], progress, cancellationToken);
 
     private async Task<string> RunAsync(IReadOnlyList<string> arguments, IProgress<GogProcessProgress>? progress, CancellationToken cancellationToken)
     {
@@ -188,7 +248,7 @@ public sealed class GogDlRuntime
             while (await reader.ReadLineAsync(cancellationToken) is { } line)
             {
                 lines.Add(line);
-                progress?.Report(new GogProcessProgress(line, ParsePercent(line)));
+                progress?.Report(new GogProcessProgress(line, ParsePercent(line), ParseRemaining(line)));
             }
         }
         var stdout = ReadAsync(process.StandardOutput);
@@ -251,6 +311,16 @@ public sealed class GogDlRuntime
         return true;
     }
 
+    /// <summary>Reads gogdl's "ETA: 1:23:45" (or "0:04:12") when it reports one.</summary>
+    private static TimeSpan? ParseRemaining(string line)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(line,
+            @"ETA[:=]?\s*(?:(\d+):)?(\d{1,2}):(\d{2})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success) return null;
+        var hours = match.Groups[1].Success ? int.Parse(match.Groups[1].Value) : 0;
+        return new TimeSpan(hours, int.Parse(match.Groups[2].Value), int.Parse(match.Groups[3].Value));
+    }
+
     private static double? ParsePercent(string line)
     {
         var marker = line.IndexOf('%');
@@ -283,21 +353,80 @@ public static class GogGalaxyDetection
     }
 }
 
+/// <summary>Searches the signed-in account's own library. The public catalog lists bundle SKUs that carry no
+/// build, and hides some base games entirely, so owned products are the reliable source for packaging.</summary>
+public sealed class GogLibraryClient
+{
+    public async Task<IReadOnlyList<GogCatalogProduct>> SearchAsync(string query, CancellationToken cancellationToken)
+    {
+        await new GogDlRuntime().RefreshAuthenticationAsync(cancellationToken);
+        var token = GogAccountDownloads.ReadAccessToken();
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("GOG-Disc-Packager/2.0");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await http.GetAsync(
+            "https://embed.gog.com/account/getFilteredProducts?mediaType=1&search=" + Uri.EscapeDataString(query),
+            cancellationToken);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            throw new UnauthorizedAccessException("The GOG sign-in could not be renewed. Sign in to GOG again.");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+        if (!document.RootElement.TryGetProperty("products", out var products)) return [];
+        return products.EnumerateArray()
+            .Select(item => new GogCatalogProduct(
+                item.GetProperty("id").ToString(),
+                item.TryGetProperty("slug", out var slug) ? slug.GetString() ?? "" : "",
+                item.TryGetProperty("title", out var title) ? title.GetString() ?? "Untitled GOG product" : "Untitled GOG product",
+                "game"))
+            .ToList();
+    }
+}
+
+/// <summary>What a GOG product can actually deliver. A store SKU may support neither path — bundle
+/// ("pack") SKUs carry no build and no installers, so media built from one is unusable.</summary>
+public sealed record GogKeyAvailability(bool DirectDownload, int InstallerFiles, int Extras, string? Failure)
+{
+    public bool OfflineBackup => InstallerFiles > 0;
+    public bool AnyInstallPath => DirectDownload || OfflineBackup;
+
+    public static async Task<GogKeyAvailability> ProbeAsync(GogKeyProduct product, CancellationToken cancellationToken)
+    {
+        var direct = false;
+        string? failure = null;
+        try { await new GogDlRuntime().GetEstimateAsync(product, cancellationToken); direct = true; }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { failure = ex.Message; }
+
+        var client = await GogAccountDownloads.CreateAsync(cancellationToken);
+        var files = await client.GetFilesAsync(product, cancellationToken);
+        return new GogKeyAvailability(direct, files.Count(file => !file.IsExtra), files.Count(file => file.IsExtra), failure);
+    }
+}
+
 public sealed class GogAccountDownloads
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
 
-    public GogAccountDownloads()
+    private GogAccountDownloads(string accessToken)
     {
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("GOG-Disc-Packager/2.0");
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ReadAccessToken());
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+    }
+
+    /// <summary>Renews the hour-long access token through gogdl, which owns the credential file.</summary>
+    public static async Task<GogAccountDownloads> CreateAsync(CancellationToken cancellationToken)
+    {
+        await new GogDlRuntime().RefreshAuthenticationAsync(cancellationToken);
+        return new GogAccountDownloads(ReadAccessToken());
     }
 
     public async Task<IReadOnlyList<GogAccountFile>> GetFilesAsync(GogKeyProduct product, CancellationToken cancellationToken)
     {
         using var response = await _http.GetAsync($"https://api.gog.com/products/{product.ProductId}?locale=en-US&expand=downloads", cancellationToken);
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            throw new UnauthorizedAccessException("GOG authentication expired or this account does not own the game.");
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new UnauthorizedAccessException("The GOG sign-in could not be renewed. Sign in to GOG again.");
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new UnauthorizedAccessException($"The signed-in GOG account does not own {product.Title}.");
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
         var files = new List<GogAccountFile>();
@@ -420,7 +549,7 @@ public sealed class GogAccountDownloads
         return 0;
     }
 
-    private static string ReadAccessToken()
+    internal static string ReadAccessToken()
     {
         if (!File.Exists(AppPaths.GogAuth)) throw new UnauthorizedAccessException("Sign in to GOG first.");
         using var document = JsonDocument.Parse(File.ReadAllText(AppPaths.GogAuth));

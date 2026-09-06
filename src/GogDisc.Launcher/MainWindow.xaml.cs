@@ -33,10 +33,17 @@ public partial class MainWindow : Window
     private long _operationStarted;
     private bool _uninstallerRunning;
     private GogDownloadEstimate? _keyEstimate;
+    private TimeSpan? _lastRemaining;
     private TaskCompletionSource<string?>? _authenticationCodeCompletion;
 
     private bool IsKeyMedia => _package.DeploymentType == PackageDeploymentType.GogKeyMedia;
-    private bool DownloadOfflineBackup => IsKeyMedia && DownloadOfflineBackupBox.IsChecked == true;
+
+    /// <summary>Some GOG products ship only as offline installers; for those the backup path is the only one that works.</summary>
+    private bool OfflineBackupOnly => IsKeyMedia && _package.GogKeyProduct?.SupportsDirectDownload == false;
+
+    /// <summary>An add-on disc from a split set. It extends an existing install rather than creating one.</summary>
+    private bool IsDlcDisc => IsKeyMedia && _package.GogKeyProduct?.DiscRole == KeyDiscRole.Dlc;
+    private bool DownloadOfflineBackup => IsKeyMedia && (OfflineBackupOnly || DownloadOfflineBackupBox.IsChecked == true);
 
     public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot)
     {
@@ -136,12 +143,29 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>An add-on disc must locate the BASE game, which a direct GOG download records only in our own
+    /// state file — gogdl writes no uninstall entry and no shortcut, so generic discovery finds nothing.</summary>
+    private InstallState? FindBaseGameInstall()
+    {
+        var product = _package.GogKeyProduct;
+        if (string.IsNullOrWhiteSpace(product?.BaseProductId)) return null;
+        var baseTitle = product.BaseTitle ?? _package.Title;
+        return InstallDiscovery.Discover(new PackageManifest
+        {
+            PackageId = $"gog-{product.BaseProductId}",
+            Title = baseTitle,
+            InstallDetectionNames = [baseTitle]
+        });
+    }
+
     private void RefreshHome()
     {
-        _installState = InstallDiscovery.Discover(_package);
-        var installed = _installState is not null &&
-                        !string.IsNullOrWhiteSpace(_installState.PlayTarget) &&
-                        File.Exists(_installState.PlayTarget);
+        _installState = IsDlcDisc ? FindBaseGameInstall() : InstallDiscovery.Discover(_package);
+        var baseGamePresent = _installState is not null &&
+                              !string.IsNullOrWhiteSpace(_installState.PlayTarget) &&
+                              File.Exists(_installState.PlayTarget);
+        // An add-on disc detects the BASE game, so a hit means "ready to add", never "already installed".
+        var installed = baseGamePresent && !IsDlcDisc;
 
         ProgressPanel.Visibility = Visibility.Collapsed;
         AuthenticationSection.Visibility = Visibility.Collapsed;
@@ -150,8 +174,8 @@ public partial class MainWindow : Window
         InstalledPanel.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         DefaultActions.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
         InstalledActions.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
-        KeyOptionsSection.Visibility = !installed && IsKeyMedia ? Visibility.Visible : Visibility.Collapsed;
-        KeyDestinationSeparator.Visibility = !installed && IsKeyMedia ? Visibility.Visible : Visibility.Collapsed;
+        KeyOptionsSection.Visibility = !installed && IsKeyMedia && !OfflineBackupOnly ? Visibility.Visible : Visibility.Collapsed;
+        KeyDestinationSeparator.Visibility = !installed && IsKeyMedia && !OfflineBackupOnly ? Visibility.Visible : Visibility.Collapsed;
         var usesTemporaryBackup = !installed && (_package.RequiredDiscCount > 1 || DownloadOfflineBackup);
         TemporaryLocationSection.Visibility = !IsKeyMedia && usesTemporaryBackup ? Visibility.Visible : Visibility.Collapsed;
         KeyBackupLocationSection.Visibility = !installed && DownloadOfflineBackup ? Visibility.Visible : Visibility.Collapsed;
@@ -179,8 +203,24 @@ public partial class MainWindow : Window
         }
         else
         {
-            DestinationText.Text = _installParent;
-            FreeSpaceText.Text = GetFreeSpaceText(_installParent);
+            if (IsDlcDisc)
+            {
+                var baseTitle = _package.GogKeyProduct?.BaseTitle ?? "the base game";
+                var folder = baseGamePresent
+                    ? _installState!.InstallLocation ?? Path.GetDirectoryName(_installState.PlayTarget!)
+                    : null;
+                DestinationLabel.Text = $"This add-on installs into your {baseTitle} folder:";
+                DestinationText.Text = folder ?? $"{baseTitle} is not installed yet";
+                FreeSpaceText.Text = folder is null ? "Install Disc 1 first." : GetFreeSpaceText(folder);
+                ChooseDestinationButton.Visibility = Visibility.Collapsed;
+                InstallButton.Content = "Install add-on";
+                InstallButton.IsEnabled = folder is not null;
+            }
+            else
+            {
+                DestinationText.Text = _installParent;
+                FreeSpaceText.Text = GetFreeSpaceText(_installParent);
+            }
             TemporaryLocationText.Text = _stagingRoot;
             TemporaryFreeSpaceText.Text = GetFreeSpaceText(_temporaryParent);
             KeyBackupLocationText.Text = BackupRoot;
@@ -259,7 +299,7 @@ public partial class MainWindow : Window
 
     private async Task LoadKeyEstimateAsync()
     {
-        if (!IsKeyMedia || !GogAuthentication.HasCredentials() || _package.GogKeyProduct is null) return;
+        if (!IsKeyMedia || OfflineBackupOnly || !GogAuthentication.HasCredentials() || _package.GogKeyProduct is null) return;
         try
         {
             _keyEstimate = await new GogDlRuntime().GetEstimateAsync(_package.GogKeyProduct, CancellationToken.None);
@@ -305,28 +345,85 @@ public partial class MainWindow : Window
         ShowOperationPanels();
         OperationStatusButton.Content = "Downloading from GOG…";
         CopyProgress.IsIndeterminate = true;
-        var target = Path.Combine(_installParent, PackageBuilder.SanitizeFileName(_package.Title));
-        if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
+        // An add-on disc installs into the base game's folder, so it needs that game present first.
+        var target = product.DiscRole == KeyDiscRole.Dlc
+            ? RequireBaseGameFolder(product)
+            : Path.Combine(_installParent, PackageBuilder.SanitizeFileName(_package.Title));
+        if (product.DiscRole != KeyDiscRole.Dlc && Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
             throw new IOException($"The destination already contains files: {target}");
         var runtime = new GogDlRuntime();
         _keyEstimate = await runtime.GetEstimateAsync(product, cancellationToken);
         EnsureDestinationSpace(target, _keyEstimate.InstalledBytes > 0 ? _keyEstimate.InstalledBytes : _keyEstimate.DownloadBytes);
         SizeText.Text = $"Install size: {FormatBytes(_keyEstimate.InstalledBytes)}";
         UpdateKeySpaceText();
-        var progress = new Progress<GogProcessProgress>(value =>
+        await runtime.InstallAsync(product, target, ReportGogProgress(), cancellationToken);
+
+        // gogdl records installed state in %APPDATA%\heroic_gogdl\manifests, not in the game folder. If that
+        // folder was removed behind its back it reports "nothing to do" and downloads nothing; repair is the
+        // command that verifies against disk rather than trusting the manifest.
+        if (product.DiscRole != KeyDiscRole.Dlc && FindGameExecutable(target) is null)
         {
-            EstimateText.Text = value.Message;
-            if (value.Percent is { } percent) { CopyProgress.IsIndeterminate = false; CopyProgress.Value = percent; }
-        });
-        await runtime.InstallAsync(product, target, progress, cancellationToken);
+            // Same thing from the user's side — a first install — so keep the wording. The distinction
+            // between download and repair is a gogdl detail and belongs in the log, not on a button.
+            _log.Write("gogdl had nothing to do but no game is present; repairing against its manifest.");
+            EstimateText.Text = "Estimated time remaining: Calculating…";
+            CopyProgress.IsIndeterminate = true;
+            await runtime.RepairAsync(product, target, ReportGogProgress(), cancellationToken);
+        }
         ConfirmDownloadedInstallation(target);
+    }
+
+    private static string? FindGameExecutable(string target) => Directory.Exists(target)
+        ? Directory.EnumerateFiles(target, "*.exe", SearchOption.AllDirectories)
+            .FirstOrDefault(path => !Path.GetFileName(path).StartsWith("unins", StringComparison.OrdinalIgnoreCase))
+        : null;
+
+    /// <summary>Turns gogdl's console chatter into the same status the disc-copy path shows. Its raw lines go to
+    /// the log only — they are diagnostics, and reading like an error is worse than showing nothing.</summary>
+    private Progress<GogProcessProgress> ReportGogProgress() => new(value =>
+    {
+        _log.Write("gogdl: " + value.Message);
+        if (value.Percent is { } percent)
+        {
+            CopyProgress.IsIndeterminate = false;
+            CopyProgress.Value = percent;
+        }
+        if (value.Remaining is { } remaining) _lastRemaining = remaining;
+        EstimateText.Text = _lastRemaining is { } eta
+            ? $"Estimated time remaining: {FormatRemaining(eta)}"
+            : "Estimated time remaining: Calculating…";
+    });
+
+    private static string FormatRemaining(TimeSpan remaining) => remaining.TotalHours >= 1
+        ? $"{(int)remaining.TotalHours} hr {remaining.Minutes} min"
+        : $"{Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes))} Minutes";
+
+    /// <summary>Locates the base game an add-on disc extends, or explains which disc to install first.</summary>
+    private string RequireBaseGameFolder(GogKeyProduct product)
+    {
+        var baseTitle = product.BaseTitle ?? "the base game";
+        var state = _installState;
+        var folder = state?.InstallLocation ?? Path.GetDirectoryName(state?.PlayTarget ?? "");
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            throw new InvalidOperationException(
+                $"{baseTitle} is not installed yet.\n\nInstall Disc 1 ({baseTitle}) first — this add-on installs into that game's folder.");
+
+        // gogdl rewrites this folder to match the product it is given, so the user is told before it touches
+        // an existing installation. An earlier build deleted a whole game here; never install one silently.
+        if (MessageBox.Show(this,
+                $"Adding {_package.Title} re-checks every file in:\n\n{folder}\n\n" +
+                $"{baseTitle} must stay installed there while this runs, and files that do not belong to " +
+                "the game or this add-on may be replaced.\n\nContinue?",
+                "Add to an existing installation", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+            throw new OperationCanceledException("The add-on installation was cancelled.");
+        return folder;
     }
 
     private async Task DownloadOfflineBackupAndInstallAsync(GogKeyProduct product, CancellationToken cancellationToken)
     {
         ShowOperationPanels();
         OperationStatusButton.Content = "Downloading GOG backup…";
-        var client = new GogAccountDownloads();
+        var client = await GogAccountDownloads.CreateAsync(cancellationToken);
         var files = (await client.GetFilesAsync(product, cancellationToken)).Where(file => !file.IsExtra).ToList();
         if (files.Count == 0) throw new InvalidOperationException("GOG did not return a Windows offline installer for this product and language.");
         var backupRoot = BackupRoot;
@@ -384,13 +481,36 @@ public partial class MainWindow : Window
 
     private void ConfirmDownloadedInstallation(string target)
     {
-        var executable = Directory.Exists(target) ? Directory.EnumerateFiles(target, "*.exe", SearchOption.AllDirectories)
-            .FirstOrDefault(path => !Path.GetFileName(path).StartsWith("unins", StringComparison.OrdinalIgnoreCase)) : null;
-        if (executable is null) throw new InvalidOperationException("The GOG download completed, but no installed game executable was found.");
+        if (IsDlcDisc)
+        {
+            ConfirmAddOnInstallation(target);
+            return;
+        }
+        var executable = FindGameExecutable(target)
+            ?? throw new InvalidOperationException("The GOG download completed, but no installed game executable was found.");
         KeyInstallOwnership.Mark(target, _package);
         _installState = InstallDiscovery.SaveManualTarget(_package, executable, target);
         _log.Write("Direct GOG installation confirmed.");
         RefreshHome();
+    }
+
+    /// <summary>An add-on must leave the base game intact and must not claim its folder: overwriting the
+    /// ownership marker would break the base game's uninstall and aim a DLC removal at the whole install.</summary>
+    private void ConfirmAddOnInstallation(string target)
+    {
+        var baseTitle = _package.GogKeyProduct?.BaseTitle ?? "the base game";
+        var playTarget = _installState?.PlayTarget;
+        if (string.IsNullOrWhiteSpace(playTarget) || !File.Exists(playTarget))
+        {
+            _log.Write($"ERROR add-on install left {baseTitle} missing from {target}.");
+            throw new InvalidOperationException(
+                $"{baseTitle} is no longer installed in:\n\n{target}\n\n" +
+                "The add-on download removed or replaced it instead of adding to it. Reinstall Disc 1 before retrying.");
+        }
+        _log.Write($"Add-on installed into {target}; {baseTitle} intact, ownership unchanged.");
+        RefreshHome();
+        MessageBox.Show(this, $"{_package.Title} was added to {baseTitle}.",
+            "Add-on installed", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private static string SafeDownloadName(string name, string id)
@@ -584,6 +704,7 @@ public partial class MainWindow : Window
 
     private void ShowOperationPanels()
     {
+        _lastRemaining = null;
         ContentScroller.ScrollToTop();
         KeyScrollBoundary.Visibility = Visibility.Collapsed;
         DefaultPanel.Visibility = Visibility.Collapsed;
@@ -768,7 +889,7 @@ public partial class MainWindow : Window
         try
         {
             await EnsureGogAuthenticationAsync(_operation.Token);
-            var client = new GogAccountDownloads();
+            var client = await GogAccountDownloads.CreateAsync(_operation.Token);
             var extras = (await client.GetFilesAsync(_package.GogKeyProduct!, _operation.Token)).Where(file => file.IsExtra).ToList();
             if (extras.Count == 0) { MessageBox.Show(this, "GOG lists no extras for this product.", "Extras", MessageBoxButton.OK, MessageBoxImage.Information); return; }
             var selected = SelectExtras(extras);

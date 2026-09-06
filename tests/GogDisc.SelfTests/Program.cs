@@ -56,6 +56,7 @@ await Run("Path traversal rejection", TestPathSafety);
 await Run("Read-only runtime cache", TestReadOnlyCache);
 await Run("Incomplete and gapped families rejected", TestIncompleteFamilies);
 await Run("GOG Key Media package", TestKeyMediaPackage);
+await Run("Key Media disc set per product", TestKeyMediaDiscSet);
 await Run("GOG string size metadata", TestGogStringSizes);
 await Run("GOG localized download estimate", TestGogLocalizedEstimate);
 await Run("Owned Key Media uninstall", TestOwnedKeyUninstall);
@@ -277,7 +278,10 @@ async Task TestKeyMediaPackage()
     var launcher = fixture.File("Launch.exe", 128);
     var result = await KeyMediaBuilder.BuildAsync(new KeyMediaBuildRequest
     {
-        Product = new GogKeyProduct { ProductId = "1091507383", Slug = "test_game", Title = "Test Game", Language = "en", AvailableExtras = 0 },
+        Discs = [new KeyMediaDisc
+        {
+            Product = new GogKeyProduct { ProductId = "1091507383", Slug = "test_game", Title = "Test Game", Language = "en", AvailableExtras = 0 }
+        }],
         OutputDirectory = fixture.Directory("output"),
         LauncherExecutable = launcher
     });
@@ -289,6 +293,39 @@ async Task TestKeyMediaPackage()
     Equal(0, media.Package.Files.Count);
     True(!Directory.Exists(Path.Combine(mediaRoot, "Payload")), "Key Media unexpectedly contains a payload folder.");
     True(File.ReadAllText(Path.Combine(mediaRoot, "package.json")).Contains("1091507383"), "Product identity was not written.");
+}
+
+async Task TestKeyMediaDiscSet()
+{
+    using var fixture = new TempFixture();
+    var launcher = Path.Combine(fixture.Root, "Launch.exe");
+    File.WriteAllText(launcher, "launcher");
+    var baseProduct = new GogKeyProduct { ProductId = "1423049311", Slug = "base_game", Title = "Base Game", Language = "en" };
+    var addOn = new GogKeyProduct
+    {
+        ProductId = "1256837418", Slug = "base_game", Title = "Story Add-On", Language = "en",
+        DiscRole = KeyDiscRole.Dlc, BaseProductId = "1423049311", BaseTitle = "Base Game", IncludedDlcs = ["1256837418"]
+    };
+    var result = await KeyMediaBuilder.BuildAsync(new KeyMediaBuildRequest
+    {
+        Discs = [new KeyMediaDisc { Product = baseProduct }, new KeyMediaDisc { Product = addOn }],
+        OutputDirectory = fixture.Directory("output"),
+        LauncherExecutable = launcher
+    });
+
+    var discOne = Path.Combine(result.PackageDirectory, "Disc 1 - Base Game", "Key Media");
+    var discTwo = Path.Combine(result.PackageDirectory, "Disc 2 - Story Add-On", "Key Media");
+    True(Directory.Exists(discOne), "Disc 1 folder was not created.");
+    True(Directory.Exists(discTwo), "Disc 2 folder was not created.");
+
+    var addOnPackage = DiscMedia.Load(discTwo).Package;
+    Equal("gog-1256837418", addOnPackage.PackageId);
+    Equal(KeyDiscRole.Dlc, addOnPackage.GogKeyProduct!.DiscRole);
+    // gogdl addresses DLC through the base game, so the add-on disc must download the base product ID.
+    Equal("1423049311", addOnPackage.GogKeyProduct.DownloadProductId);
+    // The add-on installs into the base game's folder, so it must detect that game, not itself.
+    True(addOnPackage.InstallDetectionNames.Contains("Base Game"), "Add-on disc does not detect the base game.");
+    Equal("1423049311", DiscMedia.Load(discOne).Package.GogKeyProduct!.DownloadProductId);
 }
 
 Task TestGogStringSizes()
