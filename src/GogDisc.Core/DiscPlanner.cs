@@ -3,7 +3,10 @@ namespace GogDisc.Core;
 public static class DiscPlanner
 {
     public const long DefaultReserveBytes = 256L * 1024 * 1024;
-    public const long CdReserveBytes = 128L * 1024 * 1024;
+    // The self-contained launcher is currently about 72 MB. Keep roughly 29 MB
+    // beyond that for manifests, artwork, and optical-filesystem overhead without
+    // needlessly forcing common sub-600 MB CD payloads onto a second disc.
+    public const long CdReserveBytes = 96L * 1024 * 1024;
     public const long Cd650CapacityBytes = 650_000_000L;
     public const long CdCapacityBytes = 700_000_000L;
     public const long Dvd5CapacityBytes = 4_700_000_000L;

@@ -107,6 +107,7 @@ Task TestSetupScanning()
 Task TestDiscAllocation()
 {
     Equal(700_000_000L, DiscPlanner.CdCapacityBytes);
+    Equal(96L * 1024 * 1024, DiscPlanner.CdReserveBytes);
     Equal(4_700_000_000L, DiscPlanner.Dvd5CapacityBytes);
     Equal(8_500_000_000L, DiscPlanner.Dvd9CapacityBytes);
     Equal(100_000_000_000L, DiscPlanner.Bd100CapacityBytes);
@@ -128,6 +129,24 @@ Task TestDiscAllocation()
     Equal(2, plan.RequiredDiscCount);
     Equal(2, plan.Discs.Count);
     Equal(PackageFileKind.Extra, plan.Discs[1].Files[^1].Kind);
+
+    var cdSizedFamily = new SetupFamily
+    {
+        SetupExecutable = "setup_breath_of_fire_iv.exe",
+        FamilyName = "setup_breath_of_fire_iv",
+        InstallerFiles =
+        [
+            new("game", "setup_breath_of_fire_iv.exe", 558_467_216, PackageFileKind.Installer, 0)
+        ],
+        Extras = [new("manual", "Manual.pdf", 9_538_566, PackageFileKind.Extra, 0)],
+        ExcludedPatches = []
+    };
+    var cdPlan = DiscPlanner.Create(
+        cdSizedFamily,
+        DiscPlanner.CdCapacityBytes,
+        DiscPlanner.CdReserveBytes);
+    Equal(1, cdPlan.RequiredDiscCount);
+    Equal(1, cdPlan.Discs.Count);
     return Task.CompletedTask;
 }
 
