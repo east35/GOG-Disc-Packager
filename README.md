@@ -2,7 +2,7 @@
 
 GOG Disc Packager creates two kinds of physical GOG release: traditional offline media containing an original GOG installer backup, and compact **GOG Key Media** that stores durable product identity and retrieves an owned game from GOG at installation time.
 
-[Download GOG Disc Packager v1.1.0 for Windows](https://github.com/east35/GOG-Disc-Packager/raw/main/build/GOG-Disc-Packager-v1.1.0-win-x64.zip)
+[Download the latest GOG Disc Packager release for Windows](https://github.com/east35/GOG-Disc-Packager/releases/latest)
 
 > This is an independent preservation tool. It is not affiliated with or endorsed by GOG, CD Projekt, or any game publisher. You must supply your own legally obtained GOG offline installers and artwork.
 
@@ -163,6 +163,8 @@ GOG Disc Packager.exe
 LauncherPayload\Launch.exe
 README.md
 ```
+
+Versioned tags matching `v*.*.*` are built, tested, packaged, checksummed, and published on the [GitHub Releases page](https://github.com/east35/GOG-Disc-Packager/releases). See [Windows code signing and reputation](docs/CODE-SIGNING.md) for Authenticode setup and false-positive guidance.
 
 ## Tests
 

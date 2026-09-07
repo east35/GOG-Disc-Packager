@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      SIGNING_CERTIFICATE_AVAILABLE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          dotnet run --project .\tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj -c Release -p:Version=$version
+          .\publish.ps1 -Version $version -OutputDirectory .\artifacts\release
+
+      # Authenticode signing is enabled when these two repository secrets exist.
+      # See docs/CODE-SIGNING.md. Both distributed executables are signed before
+      # the ZIP and checksum are made.
+      - name: Sign executables
+        if: ${{ env.SIGNING_CERTIFICATE_AVAILABLE != '' }}
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'release-signing.pfx'
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $signTool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter signtool.exe -Recurse |
+            Where-Object FullName -Match '\\x64\\signtool.exe$' |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signTool) { throw 'signtool.exe was not found on the runner.' }
+          Get-ChildItem .\artifacts\release -Filter *.exe -Recurse | ForEach-Object {
+            & $signTool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certificatePath /p $env:CERTIFICATE_PASSWORD $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($_.FullName)" }
+            & $signTool verify /pa /v $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($_.FullName)" }
+          }
+          Remove-Item -LiteralPath $certificatePath -Force
+
+      - name: Package release
+        id: package
+        shell: pwsh
+        run: |
+          $name = 'GOG-Disc-Packager-${{ github.ref_name }}-win-x64'
+          Compress-Archive -Path .\artifacts\release\* -DestinationPath ".\artifacts\$name.zip"
+          $hash = (Get-FileHash ".\artifacts\$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content ".\artifacts\$name.sha256" -Encoding ascii
+          "archive=$name.zip" >> $env:GITHUB_OUTPUT
+          "checksum=$name.sha256" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' `
+            ".\artifacts\${{ steps.package.outputs.archive }}" `
+            ".\artifacts\${{ steps.package.outputs.checksum }}" `
+            --verify-tag --generate-notes --title 'GOG Disc Packager ${{ github.ref_name }}'
