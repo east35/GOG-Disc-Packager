@@ -262,7 +262,7 @@ public sealed class GogDlRuntime
 
     private static JsonDocument ParseLastJson(string output)
     {
-        foreach (var line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Reverse())
+        foreach (var line in Enumerable.Reverse(output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)))
             try { return JsonDocument.Parse(line); } catch (JsonException) { }
         throw new InvalidDataException("The GOG runtime did not return usable metadata.");
     }
