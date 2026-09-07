@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 
 namespace GogDisc.Core;
@@ -38,14 +39,12 @@ public static class StagingCopier
                 continue;
             }
 
-            if (!File.Exists(source) || new FileInfo(source).Length != entry.Size)
-                throw new IOException($"Missing or incorrectly sized disc file: {entry.DiscPath}");
+            await using var input = await OpenDiscFileAsync(source, entry, cancellationToken);
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             var outputPath = multipart ? assemblyPath : destination + ".partial";
             if (!multipart && File.Exists(outputPath)) File.Delete(outputPath);
 
-            await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true);
             await using var output = new FileStream(outputPath, multipart ? FileMode.OpenOrCreate : FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, 1024 * 1024, true);
             if (multipart) output.Seek(entry.SourceOffset, SeekOrigin.Begin);
@@ -79,6 +78,33 @@ public static class StagingCopier
             StagingStateStore.Save(stagingRoot, state);
             FinalizeIfComplete(media.Package, entry, destination, assemblyPath, state);
             completed += entry.Size;
+        }
+    }
+
+    /// <summary>How long a disc file may stay unreadable before the media is called bad.</summary>
+    public static TimeSpan DriveSettleTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Windows lists a newly inserted disc as soon as its filesystem mounts, which is before the drive has
+    /// finished spinning up: for a few seconds the payload reads as missing or short. Failing on the first look turned
+    /// an ordinary disc swap into a failed install that only a manual retry fixed, so wait the drive out — a file that
+    /// is genuinely absent still fails, just later.</summary>
+    private static async Task<FileStream> OpenDiscFileAsync(string source, PackageFileEntry entry, CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (File.Exists(source) && new FileInfo(source).Length == entry.Size)
+                    return new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            if (Stopwatch.GetElapsedTime(started) >= DriveSettleTimeout)
+                throw new IOException($"Missing or incorrectly sized disc file: {entry.DiscPath}");
+            await Task.Delay(500, cancellationToken);
         }
     }
 

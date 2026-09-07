@@ -30,7 +30,9 @@ public partial class MainWindow : Window
     private string _installParent;
     private string _temporaryParent;
     private string _backupParent;
-    private long _operationStarted;
+    private long _estimateSampleTaken;
+    private long _estimateSampleBytes = -1;
+    private double? _estimateRate;
     private bool _uninstallerRunning;
     private GogDownloadEstimate? _keyEstimate;
     private TimeSpan? _lastRemaining;
@@ -237,7 +239,6 @@ public partial class MainWindow : Window
     {
         if (_operation is not null) return;
         _operation = new CancellationTokenSource();
-        _operationStarted = Stopwatch.GetTimestamp();
         if (_package.RequiredDiscCount > 1) ShowCopying(1);
         else ShowInstalling(1);
         try
@@ -629,19 +630,32 @@ public partial class MainWindow : Window
         if (!File.Exists(installer)) throw new FileNotFoundException("The original GOG installer was not found.", installer);
         ShowInstalling(_package.RequiredDiscCount);
         CopyProgress.IsIndeterminate = true;
-        EstimateText.Text = "Completing installation with the original GOG setup…";
-        _log.Write($"Launching original installer: {installer}");
         var target = Path.Combine(_installParent, PackageBuilder.SanitizeFileName(_package.Title));
-        using var process = Process.Start(new ProcessStartInfo(installer)
+
+        while (true)
         {
-            UseShellExecute = true,
-            WorkingDirectory = Path.GetDirectoryName(installer)!,
-            Arguments = $"/DIR=\"{target.Replace("\"", "")}\""
-        }) ?? throw new InvalidOperationException("Windows could not start the GOG installer.");
-        await process.WaitForExitAsync(cancellationToken);
-        _log.Write($"Original installer exited with code {process.ExitCode}.");
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"The GOG installer exited with code {process.ExitCode}.");
+            var exitCode = await StartSetupAsync(installer, target, cancellationToken);
+            if (exitCode == 0) break;
+
+            // Setup never reaches its wizard without administrator rights, so an unapproved prompt is by far the most
+            // likely reason for the codes Inno reports before it initializes: 1 (failed to initialize) and 2 (cancelled
+            // before copying began). Retry has to be offered here — sending someone back to Install to guess what went
+            // wrong is how a first attempt turns into troubleshooting.
+            var permissionLikely = exitCode is ElevationDeniedExitCode or 1 or 2;
+            var explanation = permissionLikely
+                ? "Windows didn't get permission to run the GOG setup, so nothing was installed.\n\n" +
+                  "The permission prompt closes on its own after about two minutes, so it may have timed out while it " +
+                  "was hidden behind another window."
+                : $"The GOG installer stopped with code {exitCode}, so nothing was installed.";
+
+            if (MessageBox.Show(this,
+                    $"{explanation}\n\nThe copied files were kept. Try setup again?",
+                    "Setup didn't finish", MessageBoxButton.YesNo,
+                    permissionLikely ? MessageBoxImage.Warning : MessageBoxImage.Error) != MessageBoxResult.Yes)
+                throw new OperationCanceledException();
+
+            _log.Write($"Retrying setup after exit code {exitCode}.");
+        }
 
         _installState = InstallDiscovery.Discover(_package);
         if (_installState is null || string.IsNullOrWhiteSpace(_installState.PlayTarget) || !File.Exists(_installState.PlayTarget))
@@ -665,6 +679,50 @@ public partial class MainWindow : Window
         }
         _log.Write("Installation confirmed; owned staging removed.");
         RefreshHome();
+    }
+
+    /// <summary>Windows returns ERROR_CANCELLED when the elevation prompt is declined or times out unanswered.</summary>
+    private const int ElevationDeniedExitCode = 1223;
+
+    /// <summary>Runs the original setup elevated. GOG installs to a folder at the drive root, so setup always needs
+    /// administrator rights; asking for them here means an unanswered prompt comes back immediately as ERROR_CANCELLED
+    /// instead of leaving setup to sit for the prompt's two-minute timeout and then exit with a code that reads like a
+    /// cancelled wizard.</summary>
+    private async Task<int> StartSetupAsync(string installer, string target, CancellationToken cancellationToken)
+    {
+        EstimateText.Text = "Approve the Windows permission prompt to continue…";
+        // Inno Setup reports only an exit code, which says nothing about why setup stopped. Its own /LOG next to ours
+        // is the only record of what the wizard actually did.
+        var setupLog = Path.Combine(AppPaths.Logs, PackageBuilder.SanitizeFileName(_package.PackageId) + "-setup.log");
+        Directory.CreateDirectory(AppPaths.Logs);
+        _log.Write($"Launching original installer elevated: {installer}");
+
+        Process? process;
+        try
+        {
+            process = Process.Start(new ProcessStartInfo(installer)
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = Path.GetDirectoryName(installer)!,
+                Arguments = $"/DIR=\"{target.Replace("\"", "")}\" /LOG=\"{setupLog}\""
+            });
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == ElevationDeniedExitCode)
+        {
+            _log.Write("The Windows permission prompt was declined or timed out before setup started.");
+            return ElevationDeniedExitCode;
+        }
+        if (process is null) throw new InvalidOperationException("Windows could not start the GOG installer.");
+
+        using (process)
+        {
+            EstimateText.Text = "Completing installation with the original GOG setup…";
+            _log.Write($"Setup's own log: {setupLog}");
+            await process.WaitForExitAsync(cancellationToken);
+            _log.Write($"Original installer exited with code {process.ExitCode}.");
+            return process.ExitCode;
+        }
     }
 
     private void ShowInstalling(int discNumber)
@@ -705,6 +763,8 @@ public partial class MainWindow : Window
     private void ShowOperationPanels()
     {
         _lastRemaining = null;
+        _estimateSampleBytes = -1;
+        _estimateRate = null;
         ContentScroller.ScrollToTop();
         KeyScrollBoundary.Visibility = Visibility.Collapsed;
         DefaultPanel.Visibility = Visibility.Collapsed;
@@ -722,15 +782,30 @@ public partial class MainWindow : Window
                 index + 1 == currentDisc ? ActiveLabelBrush : MutedLabelBrush;
     }
 
+    /// <summary>Estimates from the rate measured since the previous sample rather than from an average over the whole
+    /// operation. Bytes credited the instant a disc starts — files an earlier attempt already staged and verified —
+    /// arrive with no elapsed copying behind them, and waiting for a disc swap is not copy time; averaging either into
+    /// the rate made the second disc report minutes when it had most of an hour to go.</summary>
     private void UpdateEstimate(long completed, long total)
     {
         if (completed <= 0 || total <= completed) return;
-        var elapsed = Stopwatch.GetElapsedTime(_operationStarted).TotalSeconds;
-        if (elapsed < 2) return;
-        var remaining = TimeSpan.FromSeconds((total - completed) / (completed / elapsed));
-        EstimateText.Text = remaining.TotalHours >= 1
-            ? $"Estimated time remaining: {(int)remaining.TotalHours} hr {remaining.Minutes} min"
-            : $"Estimated time remaining: {Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes))} Minutes";
+        var now = Stopwatch.GetTimestamp();
+        if (_estimateSampleBytes < 0)
+        {
+            _estimateSampleBytes = completed;
+            _estimateSampleTaken = now;
+            return;
+        }
+
+        var seconds = Stopwatch.GetElapsedTime(_estimateSampleTaken, now).TotalSeconds;
+        if (seconds < 2) return;
+        var rate = (completed - _estimateSampleBytes) / seconds;
+        _estimateSampleBytes = completed;
+        _estimateSampleTaken = now;
+        if (rate < 1) return;
+
+        _estimateRate = _estimateRate is { } previous ? previous * 0.7 + rate * 0.3 : rate;
+        EstimateText.Text = "Estimated time remaining: " + FormatRemaining(TimeSpan.FromSeconds((total - completed) / _estimateRate.Value));
     }
 
     private void Play_Click(object sender, RoutedEventArgs e)

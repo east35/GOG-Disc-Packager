@@ -52,6 +52,7 @@ await Run("Setup family scanning", TestSetupScanning);
 await Run("Disc allocation", TestDiscAllocation);
 await Run("Mixed media economy", TestMixedMediaEconomy);
 await Run("Package build and staging", TestBuildAndStage);
+await Run("Disc swap waits for the drive", TestDriveSettle);
 await Run("Path traversal rejection", TestPathSafety);
 await Run("Read-only runtime cache", TestReadOnlyCache);
 await Run("Incomplete and gapped families rejected", TestIncompleteFamilies);
@@ -227,6 +228,70 @@ async Task TestBuildAndStage()
     Equal("background.jpg", result.Manifest.BackgroundFile);
     Equal("cover.png", result.Manifest.CoverFile);
     True(File.Exists(Path.Combine(discOne, "cover.png")), "Cover art was not packaged.");
+}
+
+// A disc inserted mid-install is listed before the drive can read it. The copy has to outlast that, while media that
+// is genuinely wrong still fails.
+async Task TestDriveSettle()
+{
+    using var fixture = new TempFixture();
+    var setup = fixture.File("setup_tiny_1.0_(1).exe", 512);
+    fixture.File("setup_tiny_1.0_(1)-1.bin", 2048);
+    fixture.File("setup_tiny_1.0_(1)-2.bin", 2048);
+    var family = SetupFamilyScanner.Scan(setup);
+    var result = await PackageBuilder.BuildAsync(new PackageBuildRequest
+    {
+        Title = "Tiny Game",
+        Version = "1.0",
+        ProductType = PackageProductType.BaseGame,
+        SetupFamily = family,
+        Plan = DiscPlanner.Create(family, 3500, 256),
+        OutputDirectory = fixture.Directory("output"),
+        LauncherExecutable = fixture.File("Launch.exe", 128),
+        BackgroundImage = fixture.File("background.jpg", 96),
+        CoverImage = fixture.File("cover.png", 96)
+    });
+
+    var discTwo = DiscMedia.Load(Path.Combine(result.PackageDirectory, "Disc 02 of 02"));
+    var entry = discTwo.Disc.Files.First(file => file.Kind == PackageFileKind.Installer);
+    var payload = SafePaths.ResolveUnderRoot(discTwo.Root, entry.DiscPath);
+    var unreadable = payload + ".spinning-up";
+
+    var staging = fixture.Directory("staging");
+    var state = StagingStateStore.LoadOrCreate(staging, result.Manifest);
+    await StagingCopier.CopyDiscAsync(DiscMedia.Load(Path.Combine(result.PackageDirectory, "Disc 01 of 02")),
+        staging, state, null, CancellationToken.None);
+
+    File.Move(payload, unreadable);
+    var settles = Task.Run(async () =>
+    {
+        await Task.Delay(1200);
+        File.Move(unreadable, payload);
+    });
+    await StagingCopier.CopyDiscAsync(discTwo, staging, state, null, CancellationToken.None);
+    await settles;
+    Equal(2048L, new FileInfo(Path.Combine(staging, "setup_tiny_1.0_(1)-2.bin")).Length);
+
+    var previousTimeout = StagingCopier.DriveSettleTimeout;
+    StagingCopier.DriveSettleTimeout = TimeSpan.FromSeconds(1);
+    try
+    {
+        File.Move(payload, unreadable);
+        var refused = false;
+        var second = fixture.Directory("staging-2");
+        try
+        {
+            await StagingCopier.CopyDiscAsync(discTwo, second,
+                StagingStateStore.LoadOrCreate(second, result.Manifest), null, CancellationToken.None);
+        }
+        catch (IOException) { refused = true; }
+        True(refused, "A disc file that never appears was not reported as missing.");
+    }
+    finally
+    {
+        StagingCopier.DriveSettleTimeout = previousTimeout;
+        File.Move(unreadable, payload);
+    }
 }
 
 Task TestPathSafety()
