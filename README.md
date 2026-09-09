@@ -96,6 +96,10 @@ and release signing, see [Code signing and reputation](docs/CODE-SIGNING.md).
 
 ## Build from source
 
+Linux companion support is being planned. See the
+[Linux companion requirements and test plan](docs/LINUX-COMPANION.md) for the
+proposed approach to reading existing discs. No Linux release is available yet.
+
 Building requires Windows 10 or 11, the .NET 8 SDK, and PowerShell.
 
 ```powershell
