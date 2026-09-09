@@ -1,0 +1,113 @@
+name: Nightly prerelease
+
+on:
+  push:
+    branches:
+      - nightly
+  schedule:
+    - cron: '17 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-prerelease
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: windows-latest
+    env:
+      SIGNING_CERTIFICATE_AVAILABLE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: nightly
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Choose prerelease version
+        id: version
+        shell: pwsh
+        run: |
+          $latestTag = git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | Select-Object -First 1
+          if (-not $latestTag) { throw 'No stable version tag was found.' }
+          $stable = [Version]$latestTag.TrimStart('v')
+          $nextPatch = $stable.Build + 1
+          $version = "$($stable.Major).$($stable.Minor).$nextPatch-nightly.${{ github.run_number }}"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          dotnet run --project .\tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj -c Release -p:Version=$version
+          .\publish.ps1 -Version $version -OutputDirectory .\artifacts\release
+
+      - name: Sign executables
+        if: ${{ env.SIGNING_CERTIFICATE_AVAILABLE != '' }}
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'release-signing.pfx'
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $signTool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter signtool.exe -Recurse |
+            Where-Object FullName -Match '\\x64\\signtool.exe$' |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signTool) { throw 'signtool.exe was not found on the runner.' }
+          Get-ChildItem .\artifacts\release -Filter *.exe -Recurse | ForEach-Object {
+            & $signTool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certificatePath /p $env:CERTIFICATE_PASSWORD $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($_.FullName)" }
+            & $signTool verify /pa /v $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($_.FullName)" }
+          }
+          Remove-Item -LiteralPath $certificatePath -Force
+
+      - name: Package prerelease
+        id: package
+        shell: pwsh
+        run: |
+          $name = 'GOG-Disc-Packager-nightly-win-x64'
+          Compress-Archive -Path .\artifacts\release\* -DestinationPath ".\artifacts\$name.zip"
+          $hash = (Get-FileHash ".\artifacts\$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content ".\artifacts\$name.sha256" -Encoding ascii
+          "archive=$name.zip" >> $env:GITHUB_OUTPUT
+          "checksum=$name.sha256" >> $env:GITHUB_OUTPUT
+
+      - name: Publish rolling prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag --force nightly $env:GITHUB_SHA
+          git push origin refs/tags/nightly --force
+
+          $notes = @"
+          Automated test build from the ``nightly`` branch.
+
+          Version: ``${{ steps.version.outputs.version }}``
+          Commit: ``$env:GITHUB_SHA``
+
+          This build may be unstable. Use the latest stable release for normal installations.
+          "@
+
+          if (gh release view nightly 2>$null) {
+            gh release edit nightly --title 'GOG Disc Packager Nightly' --notes $notes --prerelease
+            gh release upload nightly `
+              ".\artifacts\${{ steps.package.outputs.archive }}" `
+              ".\artifacts\${{ steps.package.outputs.checksum }}" `
+              --clobber
+          } else {
+            gh release create nightly `
+              ".\artifacts\${{ steps.package.outputs.archive }}" `
+              ".\artifacts\${{ steps.package.outputs.checksum }}" `
+              --verify-tag --prerelease --title 'GOG Disc Packager Nightly' --notes $notes
+          }

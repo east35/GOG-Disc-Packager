@@ -108,6 +108,18 @@ Run the self-tests with:
 dotnet run --project .\tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj -c Release
 ```
 
+## Nightly test builds
+
+Work that needs real-disc testing before a stable release goes on the `nightly`
+branch. Every push to that branch, as well as the daily scheduled run, replaces
+the rolling **Nightly** GitHub prerelease with a signed Windows ZIP and checksum.
+These builds may be unstable and should not be presented as the normal download.
+
+Start new test work by bringing `nightly` up to date with `main`, commit and push
+changes to `nightly`, then download the result from the Nightly prerelease. Once
+the changes have passed testing, merge `nightly` into `main`; a stable release is
+still created only by pushing a semantic version tag such as `v1.2.3`.
+
 ## License
 
 GOG Disc Packager is licensed under the [GNU GPLv3](LICENSE).
