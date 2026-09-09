@@ -690,7 +690,10 @@ public partial class MainWindow : Window
     /// cancelled wizard.</summary>
     private async Task<int> StartSetupAsync(string installer, string target, CancellationToken cancellationToken)
     {
-        EstimateText.Text = "Approve the Windows permission prompt to continue…";
+        OperationStatusButton.Content = "Starting GOG setup…";
+        EstimateText.Text = OpticalDriveEjector.IsOpticalDrive(Path.GetPathRoot(installer) ?? installer)
+            ? "Windows is reading and checking the setup from this disc. This may take several minutes; approve the permission prompt when it appears…"
+            : "Windows is preparing the setup; approve the permission prompt when it appears…";
         // Inno Setup reports only an exit code, which says nothing about why setup stopped. Its own /LOG next to ours
         // is the only record of what the wizard actually did.
         var setupLog = Path.Combine(AppPaths.Logs, PackageBuilder.SanitizeFileName(_package.PackageId) + "-setup.log");
