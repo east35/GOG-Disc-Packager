@@ -818,12 +818,21 @@ public partial class MainWindow : Window
             RefreshHome();
             return;
         }
-        Process.Start(new ProcessStartInfo(_installState.PlayTarget)
+        try
         {
-            UseShellExecute = true,
-            WorkingDirectory = Path.GetDirectoryName(_installState.PlayTarget)!
-        });
-        _log.Write($"Launched game: {_installState.PlayTarget}");
+            using var process = Process.Start(new ProcessStartInfo(_installState.PlayTarget)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(_installState.PlayTarget)!
+            }) ?? throw new InvalidOperationException("Windows could not start the game.");
+            _log.Write($"Launched game: {_installState.PlayTarget}");
+            Close();
+        }
+        catch (Exception ex)
+        {
+            _log.Write("Could not launch game: " + ex.Message);
+            MessageBox.Show(this, ex.Message, "Game couldn’t start", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private async void Uninstall_Click(object sender, RoutedEventArgs e)
@@ -952,6 +961,7 @@ public partial class MainWindow : Window
         {
             OpticalDriveEjector.Eject(_activeDiscRoot);
             _log.Write($"Ejected optical media from {Path.GetPathRoot(_activeDiscRoot)}.");
+            Close();
         }
         catch (Exception ex)
         {
