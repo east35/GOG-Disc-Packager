@@ -11,6 +11,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.Launcher", "src\Gog
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.SelfTests", "tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj", "{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.Companion", "src\GogDisc.Companion\GogDisc.Companion.csproj", "{4E50E68E-A71B-42FB-8C1F-6A37058AA8BB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GogDisc.CompanionTests", "tests\GogDisc.CompanionTests\GogDisc.CompanionTests.csproj", "{B28EA5BC-F89C-4C66-923B-31E63AF85861}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,5 +37,13 @@ Global
 		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{598C6C58-A1C9-4091-918C-82DE8BDB9AB2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E50E68E-A71B-42FB-8C1F-6A37058AA8BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E50E68E-A71B-42FB-8C1F-6A37058AA8BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E50E68E-A71B-42FB-8C1F-6A37058AA8BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E50E68E-A71B-42FB-8C1F-6A37058AA8BB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B28EA5BC-F89C-4C66-923B-31E63AF85861}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B28EA5BC-F89C-4C66-923B-31E63AF85861}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B28EA5BC-F89C-4C66-923B-31E63AF85861}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B28EA5BC-F89C-4C66-923B-31E63AF85861}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

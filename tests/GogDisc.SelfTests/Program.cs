@@ -54,6 +54,7 @@ await Run("Mixed media economy", TestMixedMediaEconomy);
 await Run("Package build and staging", TestBuildAndStage);
 await Run("Disc swap waits for the drive", TestDriveSettle);
 await Run("Path traversal rejection", TestPathSafety);
+await Run("Manifest validation", TestManifestValidation);
 await Run("Read-only runtime cache", TestReadOnlyCache);
 await Run("Incomplete and gapped families rejected", TestIncompleteFamilies);
 await Run("GOG Key Media package", TestKeyMediaPackage);
@@ -301,6 +302,32 @@ Task TestPathSafety()
     try { SafePaths.ResolveUnderRoot(fixture.Root, "..\\outside.exe"); }
     catch (InvalidDataException) { rejected = true; }
     True(rejected, "Traversal path was accepted.");
+    Throws<InvalidDataException>(() => SafePaths.ResolveUnderRoot(fixture.Root, "folder\\outside.exe"));
+    return Task.CompletedTask;
+}
+
+Task TestManifestValidation()
+{
+    using var fixture = new TempFixture();
+    var root = fixture.Directory("disc");
+    var package = new PackageManifest
+    {
+        SchemaVersion = 99,
+        PackageId = "future",
+        Title = "Future package",
+        RequiredDiscCount = 1,
+        TotalDiscCount = 1
+    };
+    var packageBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(package, JsonFiles.Options);
+    File.WriteAllBytes(Path.Combine(root, "package.json"), packageBytes);
+    JsonFiles.Write(Path.Combine(root, "disc.json"), new DiscManifest
+    {
+        PackageId = package.PackageId,
+        DiscNumber = 1,
+        TotalDiscCount = 1,
+        PackageManifestSha256 = Hashing.Sha256Bytes(packageBytes)
+    });
+    Throws<InvalidDataException>(() => DiscMedia.Load(root));
     return Task.CompletedTask;
 }
 

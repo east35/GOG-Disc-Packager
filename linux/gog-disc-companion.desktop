@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GOG Disc Companion
+Comment=Install games from GOG Disc Tool media
+Exec=gog-disc-companion
+Icon=gog-disc-companion
+Categories=Game;
+Terminal=false
+StartupNotify=true

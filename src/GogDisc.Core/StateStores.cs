@@ -30,5 +30,20 @@ public static class StagingStateStore
         return new StagingState { PackageId = package.PackageId, Version = package.Version };
     }
 
-    public static void Save(string stagingRoot, StagingState state) => JsonFiles.Write(Path.Combine(stagingRoot, FileName), state);
+    public static void Save(string stagingRoot, StagingState state)
+    {
+        Directory.CreateDirectory(stagingRoot);
+        var path = Path.Combine(stagingRoot, FileName);
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                System.Text.Json.JsonSerializer.Serialize(stream, state, JsonFiles.Options);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
 }

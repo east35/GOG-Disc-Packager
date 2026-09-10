@@ -96,11 +96,41 @@ and release signing, see [Code signing and reputation](docs/CODE-SIGNING.md).
 
 ## Build from source
 
-Linux companion support is being planned. See the
-[Linux companion requirements and test plan](docs/LINUX-COMPANION.md) for the
-proposed approach to reading existing discs. No Linux release is available yet.
+The Linux companion preview opens existing offline discs, stages and verifies
+installers, and runs them through umu/Proton. It includes a saved game library,
+game icons and shortcuts, extras, logs, and installation management. Look Outside
+has been confirmed working from disc insertion through gameplay on the initial
+Bazzite machine; physical multi-disc testing is deferred. See the
+[Linux companion guide and validation plan](docs/LINUX-COMPANION.md) for usage,
+preview limitations, and test status.
 
-Building requires Windows 10 or 11, the .NET 8 SDK, and PowerShell.
+With a .NET 8 SDK, inspect an automatically discovered mounted package or stage
+and verify its installer files:
+
+```bash
+dotnet run --project src/GogDisc.Companion -- inspect
+dotnet run --project src/GogDisc.Companion -- stage
+```
+
+Use `--disc /path/to/mount` when automatic discovery is unavailable and
+`--staging /path/to/folder` to override the XDG cache location.
+
+Build and install the graphical Linux companion (the publish script uses Podman
+automatically when the host has no .NET SDK):
+
+```bash
+./publish-linux.sh
+./install-linux.sh
+```
+
+The installed per-user application starts at login, watches for newly mounted
+GOG Disc Tool media, and opens the install prompt automatically. It stages and
+verifies offline installers before launching them through `umu-run`. Open it from
+the application menu to manage saved games without a disc. The publish script
+also creates a preview tar archive with an installer and SHA-256 checksum.
+
+Building the Windows packager and launcher requires Windows 10 or 11, the .NET
+8 SDK, and PowerShell.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1

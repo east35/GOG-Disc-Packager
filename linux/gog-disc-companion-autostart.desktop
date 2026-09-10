@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GOG Disc Companion Media Watcher
+Comment=Open GOG Disc Companion when supported media is inserted
+Exec=gog-disc-companion --watch
+Icon=gog-disc-companion
+Terminal=false
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

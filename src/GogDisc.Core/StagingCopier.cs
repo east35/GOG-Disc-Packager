@@ -15,10 +15,11 @@ public static class StagingCopier
         string stagingRoot,
         StagingState state,
         IProgress<CopyProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        PackageFileKind kind = PackageFileKind.Installer)
     {
         Directory.CreateDirectory(stagingRoot);
-        var entries = media.Disc.Files.Where(file => file.Kind == PackageFileKind.Installer).ToList();
+        var entries = media.Disc.Files.Where(file => file.Kind == kind).ToList();
         var total = entries.Sum(file => file.Size);
         long completed = 0;
 
@@ -31,18 +32,20 @@ public static class StagingCopier
             var assemblyPath = destination + ".gog-assembling";
             var key = VerificationKey(entry);
 
-            if (IsVerified(entry, destination, assemblyPath, state))
+            if (IsVerified(entry, destination, assemblyPath, state) &&
+                await HasExpectedHashAsync(entry, destination, assemblyPath, cancellationToken))
             {
                 completed += entry.Size;
                 progress?.Report(new CopyProgress(entry.RelativePath, completed, total, entry.Size, entry.Size));
                 FinalizeIfComplete(media.Package, entry, destination, assemblyPath, state);
                 continue;
             }
+            state.VerifiedFiles.Remove(key);
 
             await using var input = await OpenDiscFileAsync(source, entry, cancellationToken);
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            var outputPath = multipart ? assemblyPath : destination + ".partial";
+            var outputPath = multipart ? (File.Exists(destination) ? destination : assemblyPath) : destination + ".partial";
             if (!multipart && File.Exists(outputPath)) File.Delete(outputPath);
 
             await using var output = new FileStream(outputPath, multipart ? FileMode.OpenOrCreate : FileMode.CreateNew,
@@ -60,6 +63,7 @@ public static class StagingCopier
                 progress?.Report(new CopyProgress(entry.RelativePath, completed + fileCopied, total, fileCopied, entry.Size));
             }
             await output.FlushAsync(cancellationToken);
+            output.Flush(flushToDisk: true);
             output.Close();
 
             var actualHash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
@@ -108,6 +112,22 @@ public static class StagingCopier
         }
     }
 
+    public static async Task<IReadOnlyList<int>> RevalidateAsync(PackageManifest package, string stagingRoot,
+        StagingState state, CancellationToken cancellationToken)
+    {
+        var needed = new SortedSet<int>();
+        foreach (var entry in package.Files.Where(f => f.Kind == PackageFileKind.Installer))
+        {
+            var destination = SafePaths.ResolveUnderRoot(stagingRoot, entry.RelativePath);
+            if (IsVerified(entry, destination, destination + ".gog-assembling", state) &&
+                await HasExpectedHashAsync(entry, destination, destination + ".gog-assembling", cancellationToken)) continue;
+            state.VerifiedFiles.Remove(VerificationKey(entry));
+            needed.Add(entry.DiscNumber);
+        }
+        StagingStateStore.Save(stagingRoot, state);
+        return needed.ToArray();
+    }
+
     public static long RemainingBytes(PackageManifest package, string stagingRoot, StagingState state) =>
         package.Files.Where(file => file.Kind == PackageFileKind.Installer)
             .Where(file =>
@@ -132,6 +152,31 @@ public static class StagingCopier
         return File.Exists(assemblyPath) && new FileInfo(assemblyPath).Length >= entry.SourceOffset + entry.Size;
     }
 
+    private static async Task<bool> HasExpectedHashAsync(
+        PackageFileEntry entry,
+        string destination,
+        string assemblyPath,
+        CancellationToken cancellationToken)
+    {
+        var path = PartCount(entry) <= 1 || File.Exists(destination) ? destination : assemblyPath;
+        if (!File.Exists(path)) return false;
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (PartCount(entry) > 1) stream.Seek(entry.SourceOffset, SeekOrigin.Begin);
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[1024 * 1024];
+        long remaining = entry.Size;
+        while (remaining > 0)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), cancellationToken);
+            if (read == 0) return false;
+            hasher.AppendData(buffer, 0, read);
+            remaining -= read;
+        }
+        var actual = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+        return actual.Equals(entry.Sha256, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void FinalizeIfComplete(
         PackageManifest package,
         PackageFileEntry entry,
@@ -143,6 +188,7 @@ public static class StagingCopier
         var parts = package.Files.Where(file => file.Kind == entry.Kind &&
             file.RelativePath.Equals(entry.RelativePath, StringComparison.OrdinalIgnoreCase)).ToList();
         if (parts.Any(part => !state.VerifiedFiles.Contains(VerificationKey(part)))) return;
+        if (!File.Exists(assemblyPath) && File.Exists(destination) && new FileInfo(destination).Length == SourceSize(entry)) return;
         if (!File.Exists(assemblyPath) || new FileInfo(assemblyPath).Length != SourceSize(entry))
             throw new IOException($"Reassembled file has an unexpected size: {entry.RelativePath}");
         if (File.Exists(destination)) File.Delete(destination);
