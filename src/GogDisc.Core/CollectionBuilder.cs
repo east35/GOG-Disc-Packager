@@ -20,7 +20,8 @@ public static class CollectionBuilder
         if (Directory.Exists(finalRoot) && Directory.EnumerateFileSystemEntries(finalRoot).Any())
             throw new IOException($"Output package already exists and is not empty: {finalRoot}");
         var buildRoot = finalRoot + $".building-{Guid.NewGuid():N}";
-        var discRoot = Path.Combine(buildRoot, "Disc 01 of 01");
+        var discFolder = PackageBuilder.DiscFolderName(request.Title, 1, 1);
+        var discRoot = Path.Combine(buildRoot, discFolder);
         Directory.CreateDirectory(discRoot);
 
         try
@@ -101,7 +102,7 @@ public static class CollectionBuilder
             await File.WriteAllTextAsync(Path.Combine(discRoot, "autorun.inf"),
                 $"[AutoRun]\r\nopen=Launch.exe\r\nicon=game.ico\r\nlabel={request.Title.Replace("\r", " ").Replace("\n", " ")}\r\naction=Browse {request.Title}\r\n", Encoding.ASCII, cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(buildRoot, "BURNING-INSTRUCTIONS.txt"),
-                $"{request.Title} {request.Version}\r\n{request.Collection.Games.Count} games on one {request.MediaName}\r\n\r\nBurn the CONTENTS of Disc 01 of 01 using UDF 2.50 or later and enable verify-after-write.\r\n", cancellationToken);
+                $"{request.Title} {request.Version}\r\n{request.Collection.Games.Count} games on one {request.MediaName}\r\n\r\nBurn the CONTENTS of the \"{discFolder}\" folder using UDF 2.50 or later and enable verify-after-write.\r\n", cancellationToken);
             Directory.CreateDirectory(Path.GetDirectoryName(finalRoot)!);
             if (Directory.Exists(finalRoot)) Directory.Delete(finalRoot);
             Directory.Move(buildRoot, finalRoot);

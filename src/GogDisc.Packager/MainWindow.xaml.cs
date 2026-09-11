@@ -201,8 +201,8 @@ public partial class MainWindow : Window
 
     private const string ImageFilter = "Images|*.png;*.jpg;*.jpeg;*.bmp";
 
-    private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 1;
-    private bool IsCollection => DeploymentTypeBox.SelectedIndex == 2;
+    private bool IsCollection => DeploymentTypeBox.SelectedIndex == 1;
+    private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 2;
 
     private void DeploymentTypeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -218,12 +218,13 @@ public partial class MainWindow : Window
             control.Visibility = key || collection ? Visibility.Collapsed : Visibility.Visible;
         SetupLabel.Text = collection ? "Collection folder" : "GOG setup";
         SetupBrowseButton.Content = collection ? "Choose folder…" : "Browse…";
+        CollectionFolderHint.Visibility = collection ? Visibility.Visible : Visibility.Collapsed;
         SummaryText.Text = key
             ? "Enter the durable GOG product identity. The generated media will contain no game payload or account data."
             : collection ? "Choose a parent folder containing one subfolder per game, then scan the collection."
             : "Select a stock setup_*.exe, then scan the package.";
-        ScanButton.Content = key ? "Validate key media" : collection ? "Scan collection" : "Scan package";
-        BuildButton.Content = key ? "Build key media folder" : collection ? "Build collection disc" : "Build disc folders";
+        ScanButton.Content = key ? "Validate Game-Key Disc" : collection ? "Scan collection" : "Scan package";
+        BuildButton.Content = key ? "Build Game-Key Disc folder" : collection ? "Build collection disc" : "Build disc folders";
         ResetScan();
     }
 

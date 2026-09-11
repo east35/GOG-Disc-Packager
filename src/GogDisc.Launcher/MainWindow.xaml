@@ -51,6 +51,13 @@
                     </Grid>
                 </Button>
 
+                <Button x:Name="BackButton" Width="34" Height="34" HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="16,16,0,0" Style="{StaticResource SecondaryButton}" Padding="0" Click="Back_Click"
+                        ToolTip="Back to collection" Visibility="Collapsed">
+                    <Path Data="M 7,1 L 1,7 L 7,13" Stroke="#171717" StrokeThickness="1.6" StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                </Button>
+
                 <Border Width="152" Height="211" HorizontalAlignment="Left" VerticalAlignment="Top"
                         Margin="24,80,0,0" CornerRadius="9" Background="#ECECEC">
                     <Border.Effect>
@@ -85,6 +92,101 @@
             <ScrollViewer x:Name="ContentScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           PanningMode="VerticalOnly" Focusable="False" ScrollChanged="ContentScroller_ScrollChanged">
             <Grid x:Name="ScrollableContent" Margin="24,24,24,8">
+                <StackPanel x:Name="CollectionPanel" Visibility="Collapsed">
+                    <StackPanel x:Name="InstallAllSection" Style="{StaticResource Section}">
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Install entire collection" Style="{StaticResource CardText}"/>
+                                    <TextBlock Text="This will run through each game installer individually." Style="{StaticResource CardSubtext}"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" x:Name="InstallAllToggle" IsChecked="True" VerticalAlignment="Center" Margin="16,0,0,0"
+                                              Style="{StaticResource KeyToggle}" Checked="InstallAll_Changed" Unchecked="InstallAll_Changed"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="CollectionDestinationSection" Style="{StaticResource Section}">
+                        <TextBlock Text="We’ll install each game to a new folder in this location:" Style="{StaticResource SectionLabel}"/>
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="CollectionDestinationText" Style="{StaticResource CardText}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="CollectionFreeSpaceText" Style="{StaticResource CardSubtext}" Foreground="#6C6C6C"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Style="{StaticResource CardActionButton}" Margin="16,0,0,0"
+                                        Click="ChooseInstallLocation_Click" ToolTip="Choose installation location">
+                                    <Path Data="M 1,2 L 7,8 L 13,2" Stroke="#171717" StrokeThickness="1.7"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ReadySection" Style="{StaticResource Section}">
+                        <TextBlock Text="Games ready to play:" Style="{StaticResource SectionLabel}"/>
+                        <Border Style="{StaticResource ListCard}">
+                            <ItemsControl x:Name="ReadyList" AlternationCount="10000" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ListRow}" Padding="16,12" MinHeight="67">
+                                            <Grid VerticalAlignment="Center">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}" Style="{StaticResource CardText}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Size}" Style="{StaticResource CardSubtext}"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Uninstall" Tag="{Binding}" Click="CollectionUninstall_Click"
+                                                        Style="{StaticResource LinkButton}" Foreground="#8A8A8A" Margin="12,0,0,0" Padding="6,4"
+                                                        Visibility="{Binding CanUninstall, Converter={StaticResource BoolToVisibility}}"/>
+                                                <Button Grid.Column="2" Content="Extras" Tag="{Binding}" Click="CollectionExtras_Click"
+                                                        Style="{StaticResource LinkButton}" Margin="4,0,0,0" Padding="6,4"
+                                                        Visibility="{Binding HasExtras, Converter={StaticResource BoolToVisibility}}"/>
+                                                <Button Grid.Column="3" Content="Play" Tag="{Binding}" Click="CollectionPlay_Click"
+                                                        Style="{StaticResource LinkButton}" Foreground="#7020DF" FontWeight="SemiBold"
+                                                        Margin="4,0,0,0" Padding="6,4"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="AvailableSection" Style="{StaticResource Section}">
+                        <TextBlock x:Name="AvailableLabel" Text="Available games:" Style="{StaticResource SectionLabel}"/>
+                        <Border Style="{StaticResource ListCard}">
+                            <ItemsControl x:Name="AvailableList" AlternationCount="10000" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ListRow}">
+                                            <Button Style="{StaticResource ListRowButton}" Tag="{Binding}" Click="CollectionGame_Click"
+                                                    IsHitTestVisible="{Binding Selectable}" Focusable="{Binding Selectable}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Title}" Style="{StaticResource CardText}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Size}" Style="{StaticResource CardSubtext}"/>
+                                                    </StackPanel>
+                                                    <Path Grid.Column="1" Data="M 1,1 L 7,7 L 1,13" Stroke="#171717" StrokeThickness="1.6"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                          VerticalAlignment="Center" Margin="16,0,4,0"
+                                                          Visibility="{Binding Selectable, Converter={StaticResource BoolToVisibility}}"/>
+                                                </Grid>
+                                            </Button>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+
                 <StackPanel x:Name="DefaultPanel">
                     <StackPanel x:Name="KeyOptionsSection" Visibility="Collapsed" Style="{StaticResource Section}">
                         <TextBlock Text="Install from GOG or download an offline backup" Style="{StaticResource SectionLabel}"/>
@@ -209,10 +311,15 @@
             <Border x:Name="KeyScrollBoundary" Grid.Row="1" Panel.ZIndex="4" Height="1" VerticalAlignment="Top"
                     Margin="0,0,14,0" Visibility="Collapsed" IsHitTestVisible="False" Background="#D5D5D5"/>
 
-            <Border Grid.Row="2" Background="#D5D5D5"/>
+            <Border x:Name="FooterSeparator" Grid.Row="2" Background="#D5D5D5"/>
 
-            <Grid Grid.Row="3" Background="#F5F5F5">
+            <Grid x:Name="Footer" Grid.Row="3" Background="#F5F5F5">
                 <Grid Margin="24">
+                <Grid x:Name="CollectionActions" Visibility="Collapsed">
+                    <Button x:Name="InstallCollectionButton" Content="Install games" Style="{StaticResource PrimaryButton}"
+                            Click="InstallCollection_Click"/>
+                </Grid>
+
                 <Grid x:Name="DefaultActions">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
                     <Button x:Name="InstallButton" Content="Install" Style="{StaticResource PrimaryButton}"

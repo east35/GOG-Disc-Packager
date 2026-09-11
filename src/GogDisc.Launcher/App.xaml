@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:GogDisc.Launcher">
     <Application.Resources>
         <local:RoundedClipConverter x:Key="RoundedClip"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <SolidColorBrush x:Key="AccentBrush" Color="#8424E8"/>
         <SolidColorBrush x:Key="AccentLightBrush" Color="#B534E8"/>
 
@@ -163,6 +164,53 @@
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="#1F000000"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A card whose rows carry their own dividers. The list needs a large AlternationCount so the first row
+             can be told apart and drop its divider; the card edge already draws that line, rounded. -->
+        <Style x:Key="ListCard" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D3D3D3"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+
+        <Style x:Key="ListRow" TargetType="{x:Type Border}">
+            <Setter Property="BorderBrush" Value="#D3D3D3"/>
+            <Setter Property="BorderThickness" Value="0,1,0,0"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ContentPresenter}}" Value="0">
+                    <Setter Property="BorderThickness" Value="0"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ListRowButton" TargetType="{x:Type Button}">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="#111111"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome" Background="Transparent" Padding="16,12" MinHeight="67">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F8F5FC"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#EFE9F7"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F8F5FC"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

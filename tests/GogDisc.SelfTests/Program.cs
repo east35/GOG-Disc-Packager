@@ -43,7 +43,7 @@ if (args.Length >= 2 && args[0].Equals("--launcher-smoke", StringComparison.Ordi
         OutputDirectory = fixture.Directory("output"),
         LauncherExecutable = args[1]
     });
-    var disc = Path.Combine(result.PackageDirectory, "Disc 01 of 01");
+    var disc = Path.Combine(result.PackageDirectory, "Launcher Smoke Test");
     var start = new System.Diagnostics.ProcessStartInfo(args[1]) { UseShellExecute = false };
     start.ArgumentList.Add("--self-test");
     start.ArgumentList.Add("--disc-root");
@@ -126,14 +126,18 @@ async Task TestOfflineCollection()
     var collectionRoot = fixture.Directory("DOOM");
     var first = Path.Combine(collectionRoot, "DOOM 1");
     var second = Path.Combine(collectionRoot, "DOOM 2");
-    Directory.CreateDirectory(first);
-    Directory.CreateDirectory(second);
-    File.WriteAllBytes(Path.Combine(first, "setup_doom_1.9_(1).exe"), new byte[512]);
-    File.WriteAllBytes(Path.Combine(second, "setup_doom_ii_1.9_(2).exe"), new byte[640]);
-    File.WriteAllBytes(Path.Combine(second, "setup_doom_ii_1.9_(2)-1.bin"), new byte[1024]);
+    // Layout is a suggestion: the installer is found in any subfolder, and setups inside Extras are bonus content.
+    var firstInstaller = Path.Combine(first, "Installers", "GOG");
+    var secondBase = Path.Combine(second, "Base Game");
+    Directory.CreateDirectory(firstInstaller);
+    Directory.CreateDirectory(secondBase);
+    File.WriteAllBytes(Path.Combine(firstInstaller, "setup_doom_1.9_(1).exe"), new byte[512]);
+    File.WriteAllBytes(Path.Combine(secondBase, "setup_doom_ii_1.9_(2).exe"), new byte[640]);
+    File.WriteAllBytes(Path.Combine(secondBase, "setup_doom_ii_1.9_(2)-1.bin"), new byte[1024]);
     var extras = Path.Combine(second, "Extras");
     Directory.CreateDirectory(extras);
     File.WriteAllText(Path.Combine(extras, "manual.txt"), "manual");
+    File.WriteAllBytes(Path.Combine(extras, "setup_bonus_soundtrack.exe"), new byte[64]);
 
     var collection = SetupCollectionScanner.Scan(collectionRoot);
     Equal(2, collection.Games.Count);
@@ -150,7 +154,7 @@ async Task TestOfflineCollection()
         LauncherExecutable = fixture.File("Launch.exe", 128)
     });
 
-    var discRoot = Path.Combine(result.PackageDirectory, "Disc 01 of 01");
+    var discRoot = Path.Combine(result.PackageDirectory, "DOOM Collection");
     var media = DiscMedia.Load(discRoot);
     Equal(2, media.Package.CollectionGames.Count);
     Equal(4, media.Package.Files.Count);
@@ -263,13 +267,13 @@ async Task TestBuildAndStage()
     });
     Equal(2, result.Manifest.RequiredDiscCount);
     Equal(2, result.Manifest.DiscLayout.Count);
-    var discOne = Path.Combine(result.PackageDirectory, "Disc 01 of 02");
+    var discOne = Path.Combine(result.PackageDirectory, "Tiny Game - Disc 1");
     var media = DiscMedia.Load(discOne);
     var staging = fixture.Directory("staging");
     var state = StagingStateStore.LoadOrCreate(staging, result.Manifest);
     await StagingCopier.CopyDiscAsync(media, staging, state, null, CancellationToken.None);
     True(File.Exists(Path.Combine(staging, "setup_tiny_1.0_(1).exe")), "Setup was not staged.");
-    var discTwo = Path.Combine(result.PackageDirectory, "Disc 02 of 02");
+    var discTwo = Path.Combine(result.PackageDirectory, "Tiny Game - Disc 2");
     await StagingCopier.CopyDiscAsync(DiscMedia.Load(discTwo), staging, state, null, CancellationToken.None);
     Equal(2048L, new FileInfo(Path.Combine(staging, "setup_tiny_1.0_(1)-2.bin")).Length);
     True(result.Manifest.Files.Any(file => file.PartCount > 1), "Oversized file was not split across discs.");
@@ -304,14 +308,14 @@ async Task TestDriveSettle()
         CoverImage = fixture.File("cover.png", 96)
     });
 
-    var discTwo = DiscMedia.Load(Path.Combine(result.PackageDirectory, "Disc 02 of 02"));
+    var discTwo = DiscMedia.Load(Path.Combine(result.PackageDirectory, "Tiny Game - Disc 2"));
     var entry = discTwo.Disc.Files.First(file => file.Kind == PackageFileKind.Installer);
     var payload = SafePaths.ResolveUnderRoot(discTwo.Root, entry.DiscPath);
     var unreadable = payload + ".spinning-up";
 
     var staging = fixture.Directory("staging");
     var state = StagingStateStore.LoadOrCreate(staging, result.Manifest);
-    await StagingCopier.CopyDiscAsync(DiscMedia.Load(Path.Combine(result.PackageDirectory, "Disc 01 of 02")),
+    await StagingCopier.CopyDiscAsync(DiscMedia.Load(Path.Combine(result.PackageDirectory, "Tiny Game - Disc 1")),
         staging, state, null, CancellationToken.None);
 
     File.Move(payload, unreadable);
@@ -405,7 +409,7 @@ async Task TestKeyMediaPackage()
     Equal(PackageDeploymentType.GogKeyMedia, result.Manifest.DeploymentType);
     Equal("1091507383", result.Manifest.GogKeyProduct!.ProductId);
     Equal(0, result.Manifest.GogKeyProduct.AvailableExtras);
-    var mediaRoot = Path.Combine(result.PackageDirectory, "Key Media");
+    var mediaRoot = Path.Combine(result.PackageDirectory, "Test Game (Game Key)");
     var media = DiscMedia.Load(mediaRoot);
     Equal(0, media.Package.Files.Count);
     True(!Directory.Exists(Path.Combine(mediaRoot, "Payload")), "Key Media unexpectedly contains a payload folder.");
@@ -430,8 +434,8 @@ async Task TestKeyMediaDiscSet()
         LauncherExecutable = launcher
     });
 
-    var discOne = Path.Combine(result.PackageDirectory, "Disc 1 - Base Game", "Key Media");
-    var discTwo = Path.Combine(result.PackageDirectory, "Disc 2 - Story Add-On", "Key Media");
+    var discOne = Path.Combine(result.PackageDirectory, "Base Game (Game Key) - Disc 1");
+    var discTwo = Path.Combine(result.PackageDirectory, "Base Game (Game Key) - Disc 2");
     True(Directory.Exists(discOne), "Disc 1 folder was not created.");
     True(Directory.Exists(discTwo), "Disc 2 folder was not created.");
 

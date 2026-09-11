@@ -20,10 +20,11 @@ $artifactRoot = if ($OutputDirectory) {
         [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory))
     }
 } else {
-    Join-Path $projectRoot "artifacts\GOGDiscTool-$stamp"
+    # Local builds live outside the repository so an internal test build can never be committed or published.
+    Join-Path $env:LOCALAPPDATA "GOG Disc Packager\Builds\GOGDiscTool-$stamp"
 }
 $launcherOutput = Join-Path $artifactRoot 'LauncherPayload'
-$packagerTemp = Join-Path $projectRoot "artifacts\.packager-$stamp"
+$packagerTemp = Join-Path ([IO.Path]::GetTempPath()) "GOGDiscTool-packager-$stamp"
 
 try {
     New-Item -ItemType Directory -Path $launcherOutput -Force | Out-Null

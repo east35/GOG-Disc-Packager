@@ -18,11 +18,16 @@ public partial class MainWindow : Window
     private static readonly Brush MutedLabelBrush = new SolidColorBrush(Color.FromRgb(112, 112, 112));
     private static readonly Brush WaitingBrush = new SolidColorBrush(Color.FromRgb(198, 198, 198));
 
-    private readonly PackageManifest _package;
+    /// <summary>The game the install, play, extras and uninstall paths act on. On a collection disc it is swapped to
+    /// whichever game was chosen from the collection list.</summary>
+    private PackageManifest _package;
+    private readonly PackageManifest? _collection;
+    private bool _showingCollection;
+    private List<PackageManifest> _collectionQueue = [];
     private readonly string _cacheRoot;
     private readonly string? _initialDiscRoot;
     private readonly string _mediaPackageId;
-    private readonly FileLog _log;
+    private FileLog _log;
     private readonly List<TextBlock> _discLabels = [];
     private string? _activeDiscRoot;
     private InstallState? _installState;
@@ -48,12 +53,14 @@ public partial class MainWindow : Window
     private bool IsDlcDisc => IsKeyMedia && _package.GogKeyProduct?.DiscRole == KeyDiscRole.Dlc;
     private bool DownloadOfflineBackup => IsKeyMedia && (OfflineBackupOnly || DownloadOfflineBackupBox.IsChecked == true);
 
-    public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot, string? mediaPackageId = null)
+    public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot)
     {
         _package = package;
+        _collection = package.CollectionGames.Count > 0 ? package : null;
+        _showingCollection = _collection is not null;
         _cacheRoot = cacheRoot;
         _initialDiscRoot = initialDiscRoot;
-        _mediaPackageId = mediaPackageId ?? package.PackageId;
+        _mediaPackageId = package.PackageId;
         _activeDiscRoot = initialDiscRoot;
         _log = new FileLog(AppPaths.PackageLog(package.PackageId));
         _temporaryParent = AppPaths.Staging;
@@ -67,10 +74,7 @@ public partial class MainWindow : Window
         ContentScroller.MaxHeight = Math.Max(160d, SystemParameters.WorkArea.Height - 435d);
         EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
             ? Visibility.Visible : Visibility.Collapsed;
-        Title = $"Install {_package.Title}";
-        TitleText.Text = _package.Title;
-        SizeText.Text = IsKeyMedia ? "Install size: calculated after GOG sign-in" : $"Installation files: {FormatBytes(RequiredInstallerBytes())}";
-        RequiredSpaceText.Text = IsKeyMedia ? "Disk space required: calculated from the current GOG build" : $"Estimated space needed: ~{FormatBytes(RequiredInstallerBytes() * 2)}";
+        ShowPackageHeader();
         LoadArtwork();
         BuildDiscLabels();
         RefreshHome();
@@ -162,9 +166,27 @@ public partial class MainWindow : Window
         });
     }
 
+    private void ShowPackageHeader()
+    {
+        Title = $"Install {_package.Title}";
+        TitleText.Text = _package.Title;
+        SizeText.Text = IsKeyMedia ? "Install size: calculated after GOG sign-in" : $"Installation files: {FormatBytes(RequiredInstallerBytes())}";
+        RequiredSpaceText.Text = IsKeyMedia ? "Disk space required: calculated from the current GOG build" : $"Estimated space needed: ~{FormatBytes(RequiredInstallerBytes() * 2)}";
+    }
+
     private void RefreshHome()
     {
-        _installState = IsDlcDisc ? FindBaseGameInstall() : InstallDiscovery.Discover(_package);
+        if (_showingCollection)
+        {
+            RefreshCollection();
+            return;
+        }
+        CollectionPanel.Visibility = Visibility.Collapsed;
+        CollectionActions.Visibility = Visibility.Collapsed;
+        SetFooterVisible(true);
+        BackButton.Visibility = _collection is null ? Visibility.Collapsed : Visibility.Visible;
+
+        _installState =IsDlcDisc ? FindBaseGameInstall() : InstallDiscovery.Discover(_package);
         var baseGamePresent = _installState is not null &&
                               !string.IsNullOrWhiteSpace(_installState.PlayTarget) &&
                               File.Exists(_installState.PlayTarget);
@@ -251,19 +273,9 @@ public partial class MainWindow : Window
                 return;
             }
             if (_package.RequiredDiscCount == 1)
-            {
-                var disc = await WaitForDiscAsync(1, _operation.Token);
-                var installerEntry = _package.Files.Single(file => file.Kind == PackageFileKind.Installer &&
-                    file.RelativePath.Equals(_package.InstallerRelativePath, StringComparison.OrdinalIgnoreCase));
-                CopyProgress.IsIndeterminate = true;
-                EstimateText.Text = "Preparing the original GOG installer…";
-                var installer = SafePaths.ResolveUnderRoot(disc.Root, installerEntry.DiscPath);
-                await RunInstallerAsync(installer, null, _operation.Token);
-            }
+                await InstallFromSingleDiscAsync(_operation.Token);
             else
-            {
                 await StageAndInstallAsync(_operation.Token);
-            }
         }
         catch (OperationCanceledException)
         {
@@ -282,6 +294,18 @@ public partial class MainWindow : Window
             _operation.Dispose();
             _operation = null;
         }
+    }
+
+    /// <summary>A single-disc game runs setup straight from the disc; there is nothing to stage.</summary>
+    private async Task InstallFromSingleDiscAsync(CancellationToken cancellationToken)
+    {
+        var disc = await WaitForDiscAsync(1, cancellationToken);
+        var installerEntry = _package.Files.Single(file => file.Kind == PackageFileKind.Installer &&
+            file.RelativePath.Equals(_package.InstallerRelativePath, StringComparison.OrdinalIgnoreCase));
+        CopyProgress.IsIndeterminate = true;
+        EstimateText.Text = "Preparing the original GOG installer…";
+        var installer = SafePaths.ResolveUnderRoot(disc.Root, installerEntry.DiscPath);
+        await RunInstallerAsync(installer, null, cancellationToken);
     }
 
     private void DownloadOfflineBackup_Changed(object sender, RoutedEventArgs e)
@@ -772,6 +796,10 @@ public partial class MainWindow : Window
         _estimateRate = null;
         ContentScroller.ScrollToTop();
         KeyScrollBoundary.Visibility = Visibility.Collapsed;
+        BackButton.Visibility = Visibility.Collapsed;
+        CollectionPanel.Visibility = Visibility.Collapsed;
+        CollectionActions.Visibility = Visibility.Collapsed;
+        SetFooterVisible(true);
         DefaultPanel.Visibility = Visibility.Collapsed;
         InstalledPanel.Visibility = Visibility.Collapsed;
         DefaultActions.Visibility = Visibility.Collapsed;
@@ -920,8 +948,8 @@ public partial class MainWindow : Window
         if (Directory.Exists(_installParent)) dialog.InitialDirectory = _installParent;
         if (dialog.ShowDialog(this) != true) return;
         _installParent = dialog.FolderName;
-        DestinationText.Text = _installParent;
-        FreeSpaceText.Text = GetFreeSpaceText(_installParent);
+        DestinationText.Text = CollectionDestinationText.Text = _installParent;
+        FreeSpaceText.Text = CollectionFreeSpaceText.Text = GetFreeSpaceText(_installParent);
     }
 
     private void ChooseTemporaryLocation_Click(object sender, RoutedEventArgs e)
@@ -1009,6 +1037,194 @@ public partial class MainWindow : Window
         return dialog.ShowDialog() == true ? checks.Where(item => item.Box.IsChecked == true).Select(item => item.Extra).ToList() : [];
     }
 
+    private void RefreshCollection()
+    {
+        var collection = _collection!;
+        var games = collection.CollectionGames.Select(CollectionGamePackage).Select(package =>
+        {
+            var state = InstallDiscovery.Discover(package);
+            return (Package: package, State: IsPlayable(state) ? state : null);
+        }).ToList();
+        var remaining = games.Where(game => game.State is null).ToList();
+        // Bulk install is a first-run choice: once any game is installed the list goes one game at a time.
+        var canInstallAll = remaining.Count > 1 && remaining.Count == games.Count;
+        var installAll = canInstallAll && InstallAllToggle.IsChecked == true;
+        _collectionQueue = installAll ? remaining.Select(game => game.Package).ToList() : [];
+
+        Title = collection.Title;
+        TitleText.Text = collection.Title;
+        SizeText.Text = $"Total games: {games.Count}";
+        RequiredSpaceText.Text = $"Disk space required: {FormatBytes(_collectionQueue.Sum(InstallerBytes))}";
+        RequiredSpaceText.Visibility = installAll ? Visibility.Visible : Visibility.Collapsed;
+
+        BackButton.Visibility = Visibility.Collapsed;
+        DefaultPanel.Visibility = Visibility.Collapsed;
+        InstalledPanel.Visibility = Visibility.Collapsed;
+        ProgressPanel.Visibility = Visibility.Collapsed;
+        DefaultActions.Visibility = Visibility.Collapsed;
+        InstalledActions.Visibility = Visibility.Collapsed;
+        OperationActions.Visibility = Visibility.Collapsed;
+        KeyScrollBoundary.Visibility = Visibility.Collapsed;
+        CollectionPanel.Visibility = Visibility.Visible;
+
+        InstallAllSection.Visibility = canInstallAll ? Visibility.Visible : Visibility.Collapsed;
+        CollectionDestinationSection.Visibility = installAll ? Visibility.Visible : Visibility.Collapsed;
+        CollectionDestinationText.Text = _installParent;
+        CollectionFreeSpaceText.Text = GetFreeSpaceText(_installParent);
+
+        ReadyList.ItemsSource = games.Where(game => game.State is not null)
+            .Select(game => CollectionRow.For(game.Package, game.State, selectable: false)).ToList();
+        ReadySection.Visibility = games.Count > remaining.Count ? Visibility.Visible : Visibility.Collapsed;
+        AvailableList.ItemsSource = remaining.Select(game => CollectionRow.For(game.Package, null, selectable: !installAll)).ToList();
+        AvailableLabel.Text = installAll ? "These games will be installed:" : "Available games:";
+        AvailableSection.Visibility = remaining.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        InstallCollectionButton.Content = $"Install {_collectionQueue.Count} Games";
+        CollectionActions.Visibility = installAll ? Visibility.Visible : Visibility.Collapsed;
+        SetFooterVisible(installAll);
+    }
+
+    private PackageManifest CollectionGamePackage(CollectionGameManifest game) => new()
+    {
+        SchemaVersion = 2,
+        PackageId = game.GameId,
+        Title = game.Title,
+        Version = game.Version,
+        ProductType = PackageProductType.BaseGame,
+        DeploymentType = PackageDeploymentType.OfflineMedia,
+        InstallerRelativePath = game.InstallerRelativePath,
+        ExtrasRelativePath = game.ExtrasRelativePath,
+        RequiredDiscCount = 1,
+        TotalDiscCount = 1,
+        BackgroundFile = _collection!.BackgroundFile,
+        CoverFile = _collection.CoverFile,
+        IconFile = _collection.IconFile,
+        DiscLayout = _collection.DiscLayout,
+        InstallDetectionNames = game.InstallDetectionNames,
+        Files = game.Files
+    };
+
+    private static bool IsPlayable(InstallState? state) =>
+        !string.IsNullOrWhiteSpace(state?.PlayTarget) && File.Exists(state.PlayTarget);
+
+    internal static long InstallerBytes(PackageManifest package) =>
+        package.Files.Where(file => file.Kind == PackageFileKind.Installer).Sum(file => file.Size);
+
+    /// <summary>Points every per-game path (install, play, extras, uninstall, logging) at one collection game.</summary>
+    /// <remarks>Row actions (Play, Extras, Uninstall) act from the collection list, so they leave its header alone.</remarks>
+    private void SelectGame(PackageManifest package, InstallState? state = null, bool showHeader = true)
+    {
+        _package = package;
+        _log = new FileLog(AppPaths.PackageLog(package.PackageId));
+        _stagingRoot = StagingPath(_temporaryParent);
+        _installState = state;
+        BuildDiscLabels();
+        if (showHeader) ShowPackageHeader();
+    }
+
+    private void SetFooterVisible(bool visible)
+    {
+        FooterSeparator.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        Footer.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void InstallAll_Changed(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded && _operation is null && _showingCollection) RefreshHome();
+    }
+
+    private void CollectionGame_Click(object sender, RoutedEventArgs e)
+    {
+        if (_operation is not null || (sender as FrameworkElement)?.Tag is not CollectionRow row) return;
+        SelectGame(row.Package);
+        _showingCollection = false;
+        RefreshHome();
+        ContentScroller.ScrollToTop();
+    }
+
+    private void Back_Click(object sender, RoutedEventArgs e)
+    {
+        if (_operation is not null || _collection is null) return;
+        _showingCollection = true;
+        RefreshHome();
+        ContentScroller.ScrollToTop();
+    }
+
+    private void CollectionPlay_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectRow(sender)) Play_Click(sender, e);
+    }
+
+    private void CollectionExtras_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectRow(sender)) Extras_Click(sender, e);
+    }
+
+    private void CollectionUninstall_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectRow(sender)) Uninstall_Click(sender, e);
+    }
+
+    private bool SelectRow(object sender)
+    {
+        if (_operation is not null || _uninstallerRunning || (sender as FrameworkElement)?.Tag is not CollectionRow row) return false;
+        SelectGame(row.Package, row.State, showHeader: false);
+        return true;
+    }
+
+    /// <summary>Runs each remaining game's own setup in turn. A failure usually repeats for every game (a declined
+    /// permission prompt, a full drive), so the user decides whether to carry on rather than being walked through
+    /// the same error once per game.</summary>
+    private async void InstallCollection_Click(object sender, RoutedEventArgs e)
+    {
+        if (_operation is not null || _collectionQueue.Count == 0) return;
+        var queue = _collectionQueue.ToList();
+        _operation = new CancellationTokenSource();
+        try
+        {
+            for (var index = 0; index < queue.Count; index++)
+            {
+                SelectGame(queue[index]);
+                ShowInstalling(1);
+                SizeText.Text = $"Game {index + 1} of {queue.Count}";
+                RequiredSpaceText.Visibility = Visibility.Collapsed;
+                _log.Write($"Collection install {index + 1} of {queue.Count}: {_package.Title}.");
+                try
+                {
+                    await InstallFromSingleDiscAsync(_operation.Token);
+                }
+                catch (Exception ex) when (!_operation.IsCancellationRequested)
+                {
+                    _log.Write("ERROR " + ex);
+                    var reason = ex is OperationCanceledException ? "Setup was cancelled." : ex.Message;
+                    var left = queue.Count - index - 1;
+                    if (left == 0)
+                    {
+                        MessageBox.Show(this, $"{_package.Title} couldn’t be installed.\n\n{reason}",
+                            "Installation couldn’t continue", MessageBoxButton.OK, MessageBoxImage.Error);
+                        break;
+                    }
+                    if (MessageBox.Show(this,
+                            $"{_package.Title} couldn’t be installed.\n\n{reason}\n\n" +
+                            $"Continue with the remaining {left} game{(left == 1 ? "" : "s")}?",
+                            "Installation couldn’t continue", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _log.Write("Collection installation cancelled.");
+        }
+        finally
+        {
+            _operation.Dispose();
+            _operation = null;
+            _showingCollection = true;
+            RefreshHome();
+        }
+    }
+
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void Hero_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1057,6 +1273,19 @@ public partial class MainWindow : Window
         catch { return "Disk space unavailable"; }
     }
 
-    private long RequiredInstallerBytes() => _package.Files.Where(file => file.Kind == PackageFileKind.Installer).Sum(file => file.Size);
-    private static string FormatBytes(long value) => $"{value / 1_000_000_000d:N1} GB";
+    private long RequiredInstallerBytes() => InstallerBytes(_package);
+    internal static string FormatBytes(long value) => value < 1_000_000_000
+        ? $"{Math.Max(1, value / 1_000_000d):N0} MB"
+        : $"{value / 1_000_000_000d:N1} GB";
+}
+
+/// <summary>One game in the collection list. Bound from XAML, so it exposes plain properties.</summary>
+internal sealed record CollectionRow(PackageManifest Package, InstallState? State, bool Selectable)
+{
+    public string Title => Package.Title;
+    public string Size => MainWindow.FormatBytes(MainWindow.InstallerBytes(Package));
+    public bool HasExtras => Package.Files.Any(file => file.Kind == PackageFileKind.Extra);
+    public bool CanUninstall => !string.IsNullOrWhiteSpace(State?.UninstallCommand);
+
+    public static CollectionRow For(PackageManifest package, InstallState? state, bool selectable) => new(package, state, selectable);
 }

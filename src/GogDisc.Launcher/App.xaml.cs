@@ -46,9 +46,7 @@ public partial class App : Application
                 return;
             }
 
-            Window window = package.CollectionGames.Count > 0
-                ? new CollectionWindow(package, Path.GetDirectoryName(packagePath)!, args.GetValueOrDefault("disc-root"))
-                : new MainWindow(package, Path.GetDirectoryName(packagePath)!, args.GetValueOrDefault("disc-root"));
+            var window = new MainWindow(package, Path.GetDirectoryName(packagePath)!, args.GetValueOrDefault("disc-root"));
             MainWindow = window;
             _activationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
             _activationTimer.Tick += (_, _) =>

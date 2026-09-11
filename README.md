@@ -11,8 +11,6 @@ game when you install it.
 **[Watch the video](https://youtu.be/HWElimyy0rs?si=kwxalTj4uyCF9lfO)** ·
 **[Figma artwork template](https://www.figma.com/design/CBR9nICUoNR4Km00Dc8Nui/GOG-Disc-Packager?node-id=0-1&t=9PPg85pr21azP88F-1)**
 
-![GOG Disc Packager application](img/Image%203.png)
-
 > GOG Disc Packager is an independent preservation tool. It is not affiliated
 > with or endorsed by GOG, CD Projekt, or any publisher. You must own the games
 > you package and provide your own installers and artwork.
@@ -36,7 +34,7 @@ turning the installation into a reusable offline backup.
 3. Choose a disc type, a custom capacity, or **Mixed media** if you want the app to optimize a supply such as `BD50 x1, BD25 x10`.
 4. Optionally add extras and custom background, cover, and icon artwork.
 5. Choose an output folder, select **Scan package**, review the proposed layout, then select **Build disc folders**.
-6. Burn the **contents** of each generated `Disc NN of NN` folder—not the folder itself—to its own disc or ISO.
+6. Burn the **contents** of each generated disc folder—not the folder itself—to its own disc or ISO. A single disc is named after the game; a set is named `Title - Disc 1`, `Title - Disc 2`, and so on.
 
 Use UDF 2.50 or later, give each disc a distinct label ending in its disc
 number, and enable verify-after-write. Mount and test ISOs before burning them.
@@ -46,11 +44,25 @@ Windows may ignore `autorun.inf`. If nothing opens automatically, run
 
 ### Put multiple games on one disc (nightly)
 
-Choose **Offline collection**, then select a parent folder containing one
-subfolder per game. Each game folder must contain exactly one stock
-`setup_*.exe` family and may contain an `Extras` folder. The collection launcher
-lets you choose a game and then opens its normal install, play, extras, and
-uninstall screen.
+Choose **Game Collection Backup**, then select a parent folder organized like
+this:
+
+```text
+Collection/
+  Game Name/
+    Base Game/
+      setup_game.exe
+      setup_game-1.bin
+    Extras/
+      manual.zip
+```
+
+That layout is a suggestion. Each game folder needs exactly one stock
+`setup_*.exe` family, in any subfolder (or loose); only `Extras` is excluded
+from the search. Setup and `.bin` files inside `Extras` are not packaged.
+`Extras` is optional and may contain nested folders. The collection launcher
+offers to install the whole collection on first run, or lets you pick games one
+at a time; each opens its normal install, play, extras, and uninstall screen.
 
 The initial nightly implementation builds one collection disc only. It rejects
 a collection that does not fit the selected medium; multi-disc collections and
@@ -61,7 +73,7 @@ per-game artwork are not yet supported.
 1. Choose **GOG Key Media**.
 2. Enter a game title or paste its GOG store URL and select the matching product.
 3. Build the package.
-4. Burn or copy the **contents** of the generated `Key Media` folder to any filesystem-based CD, DVD, Blu-ray, or USB drive.
+4. Burn or copy the **contents** of the generated `Title (Game Key)` folder to any filesystem-based CD, DVD, Blu-ray, or USB drive.
 
 During installation, the launcher opens GOG's browser sign-in and confirms that
 the account owns the game. Credentials, tokens, installers, and temporary
@@ -84,10 +96,6 @@ required.
 
 Incremental `patch_*.exe` files are excluded from automatic installation but can
 be kept as archival extras. Package base games and DLC separately.
-
-![Multi-disc installation screen](img/Image%201.png)
-
-![Installed-game launcher screen](img/Image%202.png)
 
 ## Requirements and troubleshooting
 
@@ -113,6 +121,9 @@ Building requires Windows 10 or 11, the .NET 8 SDK, and PowerShell.
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1
 ```
+
+Builds go to `%LOCALAPPDATA%\GOG Disc Packager\Builds\GOGDiscTool-<timestamp>`,
+outside the repository. Pass `-OutputDirectory` to choose another location.
 
 Run the self-tests with:
 
