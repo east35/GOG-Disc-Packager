@@ -198,7 +198,7 @@ renderer.setAnimationLoop(time=>{
  group.position.x=THREE.MathUtils.lerp(group.position.x,x,lerp);
  group.position.z=THREE.MathUtils.lerp(group.position.z,z,lerp);
  group.position.y=THREE.MathUtils.lerp(group.position.y,active?.04:-.13,lerp);
- const scale=active?(opened?1.55:1.70):1.32;
+ const scale=active?(opened?1.90:2.00):1.55;
  group.scale.lerp(new THREE.Vector3(scale,scale,scale),lerp);
  const rotationLerp=down?.dragged?1:lerp;
  group.rotation.y=THREE.MathUtils.lerp(group.rotation.y,active?(opened?-.08:-.19)+rotationY+(reduced.matches?0:tilt):offset*.13-.18,rotationLerp);
