@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Template generator · GOG Disc Packager</title>
+    <link rel="icon" href="../favicon.svg" />
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="/generator/generator.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="../"
+        ><img class="brand-icon" src="../AppIcon.ico" alt="" /><span
+          >GOG <b>Disc Packager</b></span
+        ></a
+      >
+      <nav><a href="../">← Back to collection</a></nav>
+    </header>
+    <main class="workspace">
+      <div class="workspace-heading">
+        <div>
+          <p class="eyebrow">YOUR PHYSICAL EDITION</p>
+          <h1>Template generator</h1>
+        </div>
+        <div class="actions">
+          <button id="open-button" type="button">Open project</button
+          ><input
+            id="open"
+            type="file"
+            accept="application/json,.json"
+            hidden
+          /><button id="save" class="primary">Save project ↓</button>
+        </div>
+      </div>
+      <div class="editor">
+        <form id="controls" autocomplete="off">
+          <section>
+            <h2><span>01</span> Game details</h2>
+            <label
+              >Game title<input
+                name="game.title"
+                placeholder="Your game title"
+                required
+                maxlength="160"
+            /></label>
+            <div class="pair">
+              <label
+                >GOG game ID<input
+                  name="game.gameId"
+                  placeholder="e.g. 120765…"
+                  required /></label
+              ><label
+                >Release year<input
+                  name="game.releaseYear"
+                  type="number"
+                  min="1970"
+                  max="2100"
+                  required
+              /></label>
+            </div>
+            <div class="pair">
+              <label>Developer<input name="game.developer" required /></label
+              ><label>Publisher<input name="game.publisher" required /></label>
+            </div>
+          </section>
+          <section>
+            <h2><span>02</span> Case & media</h2>
+            <div class="pair">
+              <label
+                >Case spine<select name="case.spine">
+                  <option value="14mm">14 mm · 1–2 discs</option>
+                  <option value="17mm">17 mm · wide case</option>
+                </select></label
+              ><label
+                >Contents<select name="case.content">
+                  <option value="full-game">Full game</option>
+                  <option value="key-media">GOG Key Media</option>
+                </select></label
+              >
+            </div>
+            <div class="pair">
+              <label
+                >Media<select name="media.type">
+                  <option value="blu-ray">Blu-ray</option>
+                  <option value="dvd">DVD</option>
+                  <option value="cd">CD</option>
+                </select></label
+              ><label
+                >Disc count<input
+                  name="media.discCount"
+                  type="number"
+                  min="1"
+                  max="99"
+                  required
+              /></label>
+            </div>
+            <div id="disc-fields"></div>
+          </section>
+          <section>
+            <h2><span>03</span> Artwork</h2>
+            <label>Artwork panel<select id="art-slot"></select></label
+            ><label class="upload"
+              >Choose artwork<input
+                id="art"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+              /><span>PNG, JPG or WebP · up to 15 MB</span></label
+            >
+            <p id="art-info" class="muted">
+              Add artwork to see your cover take shape.
+            </p>
+            <div class="pair">
+              <label
+                >Focal point · horizontal<input
+                  name="focal.x"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0.5" /></label
+              ><label
+                >Vertical<input
+                  name="focal.y"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0.5"
+              /></label>
+            </div>
+            <label class="check"
+              ><input id="approved" type="checkbox" /> I approve this artwork
+              for my edition</label
+            >
+            <button id="remove-art" type="button">
+              Remove selected artwork
+            </button>
+            <label class="check"
+              ><input id="includes-title" type="checkbox" /> Front artwork
+              already includes the game title</label
+            >
+            <p class="muted">
+              A title logo is fitted to the front, spine and disc. Full-wrap
+              artwork spans all three panels; separate front and back images
+              override it.
+            </p>
+          </section>
+          <details>
+            <summary>Back cover content & logos</summary>
+            <label
+              >Back headline<input name="game.tagline" maxlength="160"
+            /></label>
+            <label
+              >Game description<textarea
+                name="game.description"
+                rows="6"
+                maxlength="3000"
+              ></textarea>
+            </label>
+            <label
+              >Included content<textarea
+                name="game.includedContent"
+                rows="4"
+                maxlength="1500"
+                placeholder="One item per line"
+              ></textarea>
+            </label>
+            <div id="brand-fields" class="pair"></div>
+            <p class="muted">
+              Choose only the logos credited to this edition. These are the
+              original marks from your Figma library.
+            </p>
+            <label
+              >Copyright notice (optional override)<textarea
+                name="game.copyright"
+                rows="3"
+                maxlength="1200"
+              ></textarea>
+            </label>
+          </details>
+          <details>
+            <summary>Rating, features & archive</summary>
+            <div class="pair">
+              <label
+                >Rating system<select name="game.rating.system">
+                  <option value="none">No rating</option>
+                  <option>ESRB</option>
+                  <option>PEGI</option>
+                </select></label
+              ><label
+                >Rating value<input
+                  name="game.rating.value"
+                  placeholder="e.g. M or 18"
+              /></label>
+            </div>
+            <label
+              >Rating descriptors<input
+                name="descriptors"
+                placeholder="Separate with commas"
+            /></label>
+            <div id="features" class="features"></div>
+            <div class="pair">
+              <label
+                >Archive date<input
+                  name="game.archive.date"
+                  type="date" /></label
+              ><label>Archivist<input name="game.archive.archivist" /></label>
+            </div>
+            <label
+              >GOG / archive URL (QR code)<input
+                name="game.archive.url"
+                type="url"
+            /></label>
+            <h3>System requirements</h3>
+            <div id="requirements" class="pair"></div>
+          </details>
+        </form>
+        <section class="preview-area" aria-label="Live preview">
+          <div class="preview-toolbar">
+            <div class="tabs" role="group" aria-label="Preview view">
+              <button data-view="wrap" aria-pressed="true">Full wrap</button
+              ><button data-view="front" aria-pressed="false">Front</button
+              ><button data-view="back" aria-pressed="false">Back</button
+              ><button data-view="spine" aria-pressed="false">Spine</button
+              ><button data-view="disc" aria-pressed="false">
+                Disc labels
+              </button>
+            </div>
+            <label class="check"
+              ><input id="guides" type="checkbox" checked /> Guides</label
+            >
+          </div>
+          <div class="preview-options">
+            <label id="disc-preview-label" hidden
+              >Preview disc<select id="disc-preview"></select></label
+            ><label
+              >Zoom<select id="zoom">
+                <option value="1">Fit</option>
+                <option value="1.5">150%</option>
+                <option value="2">200%</option>
+              </select></label
+            ><a
+              href="https://www.figma.com/design/CBR9nICUoNR4Km00Dc8Nui/GOG-Disc-Packager?node-id=1-431"
+              target="_blank"
+              rel="noreferrer"
+              >Figma template ↗</a
+            >
+          </div>
+          <div class="preview-stage"><div id="canvases"></div></div>
+          <div class="preview-caption">
+            <span id="dimensions"></span
+            ><span>Figma template · print calibration pending</span>
+          </div>
+          <div class="validation">
+            <h2>Project checks</h2>
+            <ul id="checks"></ul>
+          </div>
+          <p class="scope-note">
+            Original Figma branding, badges and panel layout. Guides are for
+            inspection; confirm case dimensions and your disc manufacturer’s
+            printable area before printing. PDF export is not available yet.
+          </p>
+          <p id="status" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="./generator.js"></script>
+  </body>
+</html>
