@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly PackageManifest _package;
     private readonly string _cacheRoot;
     private readonly string? _initialDiscRoot;
+    private readonly string _mediaPackageId;
     private readonly FileLog _log;
     private readonly List<TextBlock> _discLabels = [];
     private string? _activeDiscRoot;
@@ -47,11 +48,12 @@ public partial class MainWindow : Window
     private bool IsDlcDisc => IsKeyMedia && _package.GogKeyProduct?.DiscRole == KeyDiscRole.Dlc;
     private bool DownloadOfflineBackup => IsKeyMedia && (OfflineBackupOnly || DownloadOfflineBackupBox.IsChecked == true);
 
-    public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot)
+    public MainWindow(PackageManifest package, string cacheRoot, string? initialDiscRoot, string? mediaPackageId = null)
     {
         _package = package;
         _cacheRoot = cacheRoot;
         _initialDiscRoot = initialDiscRoot;
+        _mediaPackageId = mediaPackageId ?? package.PackageId;
         _activeDiscRoot = initialDiscRoot;
         _log = new FileLog(AppPaths.PackageLog(package.PackageId));
         _temporaryParent = AppPaths.Staging;
@@ -612,7 +614,7 @@ public partial class MainWindow : Window
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var disc = DiscMedia.Find(_package.PackageId, discNumber, _initialDiscRoot);
+            var disc = DiscMedia.Find(_mediaPackageId, discNumber, _initialDiscRoot);
             if (disc is not null)
             {
                 _activeDiscRoot = disc.Root;
@@ -887,7 +889,7 @@ public partial class MainWindow : Window
         {
             foreach (var number in discs)
             {
-                var media = DiscMedia.Find(_package.PackageId, number, _initialDiscRoot);
+                var media = DiscMedia.Find(_mediaPackageId, number, _initialDiscRoot);
                 if (media is null) continue;
                 OpenExtras(media);
                 return;
@@ -905,9 +907,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void OpenExtras(LoadedDisc media)
+    private void OpenExtras(LoadedDisc media)
     {
-        var extras = Path.Combine(media.Root, "Extras");
+        var extras = SafePaths.ResolveUnderRoot(media.Root, _package.ExtrasRelativePath);
         if (Directory.Exists(extras))
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{extras}\"") { UseShellExecute = true });
     }

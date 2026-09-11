@@ -12,6 +12,7 @@ namespace GogDisc.Packager;
 public partial class MainWindow : Window
 {
     private SetupFamily? _family;
+    private SetupCollection? _collection;
     private PackagePlan? _plan;
     private CancellationTokenSource? _cancellation;
     private GogCatalogProduct? _resolvedGame;
@@ -27,6 +28,15 @@ public partial class MainWindow : Window
 
     private void BrowseSetup_Click(object sender, RoutedEventArgs e)
     {
+        if (IsCollection)
+        {
+            BrowseFolderInto(SetupBox);
+            if (string.IsNullOrWhiteSpace(TitleBox.Text) && Directory.Exists(SetupBox.Text))
+                TitleBox.Text = Path.GetFileName(Path.TrimEndingDirectorySeparator(SetupBox.Text));
+            if (string.IsNullOrWhiteSpace(VersionBox.Text)) VersionBox.Text = "1.0";
+            ResetScan();
+            return;
+        }
         var dialog = new OpenFileDialog { Filter = "GOG setup (setup_*.exe)|setup_*.exe|Executables (*.exe)|*.exe" };
         if (dialog.ShowDialog() != true) return;
         SetupBox.Text = dialog.FileName;
@@ -192,22 +202,28 @@ public partial class MainWindow : Window
     private const string ImageFilter = "Images|*.png;*.jpg;*.jpeg;*.bmp";
 
     private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 1;
+    private bool IsCollection => DeploymentTypeBox.SelectedIndex == 2;
 
     private void DeploymentTypeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (KeyIdentityPanel is null) return;
         var key = IsKeyMedia;
+        var collection = IsCollection;
         KeyIdentityPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
         KeyDlcPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
         // Key Media derives the product type from each disc's role, so the picker would be a no-op there.
-        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel,
-                     ExtrasLabel, ExtrasPanel, ExtrasBrowseButton, ProductTypeLabel, ProductTypeBox })
+        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel })
             control.Visibility = key ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var control in new FrameworkElement[] { ExtrasLabel, ExtrasPanel, ExtrasBrowseButton, ProductTypeLabel, ProductTypeBox })
+            control.Visibility = key || collection ? Visibility.Collapsed : Visibility.Visible;
+        SetupLabel.Text = collection ? "Collection folder" : "GOG setup";
+        SetupBrowseButton.Content = collection ? "Choose folder…" : "Browse…";
         SummaryText.Text = key
             ? "Enter the durable GOG product identity. The generated media will contain no game payload or account data."
+            : collection ? "Choose a parent folder containing one subfolder per game, then scan the collection."
             : "Select a stock setup_*.exe, then scan the package.";
-        ScanButton.Content = key ? "Validate key media" : "Scan package";
-        BuildButton.Content = key ? "Build key media folder" : "Build disc folders";
+        ScanButton.Content = key ? "Validate key media" : collection ? "Scan collection" : "Scan package";
+        BuildButton.Content = key ? "Build key media folder" : collection ? "Build collection disc" : "Build disc folders";
         ResetScan();
     }
 
@@ -225,6 +241,26 @@ public partial class MainWindow : Window
                 _plan = null;
                 if (!await ValidateKeyProductAsync(product)) return false;
                 BuildButton.IsEnabled = true;
+                return true;
+            }
+            if (IsCollection)
+            {
+                if (MediaBox.SelectedIndex == 8)
+                    throw new InvalidOperationException("The nightly collection prototype currently supports one disc, not mixed or multi-disc media.");
+                _family = null;
+                _plan = null;
+                _collection = SetupCollectionScanner.Scan(SetupBox.Text);
+                var capacity = GetCapacity();
+                var reserve = GetReserve();
+                if (_collection.TotalBytes + reserve > capacity)
+                    throw new InvalidDataException($"The collection payload plus safety reserve is {FormatBytes(_collection.TotalBytes + reserve)}, larger than the selected {FormatBytes(capacity)} disc.");
+                SummaryText.Text =
+                    $"{_collection.Games.Count} games, {FormatBytes(_collection.TotalBytes)}\n" +
+                    $"One disc; {FormatBytes(capacity - reserve - _collection.TotalBytes)} usable space remains\n\n" +
+                    string.Join("\n", _collection.Games.Select(game => $"• {game.Title} ({FormatBytes(game.Family.InstallerBytes)})"));
+                Log($"Scanned collection with {_collection.Games.Count} games.");
+                BuildButton.IsEnabled = true;
+                StatusText.Text = "Collection plan is valid";
                 return true;
             }
             _family = SetupFamilyScanner.Scan(SetupBox.Text, EmptyToNull(ExtrasBox.Text), IncludePatchesBox.IsChecked == true);
@@ -399,6 +435,26 @@ public partial class MainWindow : Window
                 BuildProgress.Value = value.Percent;
                 StatusText.Text = $"{value.Activity}: {value.CurrentFile}";
             });
+            if (IsCollection)
+            {
+                var capacity = GetCapacity();
+                var collectionResult = await CollectionBuilder.BuildAsync(new CollectionBuildRequest
+                {
+                    Title = TitleBox.Text,
+                    Version = VersionBox.Text,
+                    Collection = _collection!,
+                    CapacityBytes = capacity,
+                    ReserveBytes = GetReserve(),
+                    MediaName = $"{capacity / 1_000_000_000d:0.###} GB media",
+                    OutputDirectory = OutputBox.Text,
+                    LauncherExecutable = LauncherBox.Text,
+                    BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                    CoverImage = EmptyToNull(CoverBox.Text),
+                    IconImage = preparedIcon
+                }, progress, _cancellation.Token);
+                CompleteBuild(collectionResult);
+                return;
+            }
             var result = await PackageBuilder.BuildAsync(new PackageBuildRequest
             {
                 Title = TitleBox.Text,
@@ -437,7 +493,7 @@ public partial class MainWindow : Window
     private void SetBusy(bool busy)
     {
         ScanButton.IsEnabled = !busy;
-        BuildButton.IsEnabled = !busy && _plan is not null;
+        BuildButton.IsEnabled = !busy && (_plan is not null || _collection is not null || _validatedKeyDiscs is not null);
         CancelButton.IsEnabled = busy;
     }
 
@@ -445,6 +501,7 @@ public partial class MainWindow : Window
     {
         _family = null;
         _plan = null;
+        _collection = null;
         _validatedKeyDiscs = null;
         if (BuildButton is not null) BuildButton.IsEnabled = false;
     }

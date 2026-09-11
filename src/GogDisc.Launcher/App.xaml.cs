@@ -46,18 +46,21 @@ public partial class App : Application
                 return;
             }
 
-            var window = new MainWindow(package, Path.GetDirectoryName(packagePath)!, args.GetValueOrDefault("disc-root"));
+            Window window = package.CollectionGames.Count > 0
+                ? new CollectionWindow(package, Path.GetDirectoryName(packagePath)!, args.GetValueOrDefault("disc-root"))
+                : new MainWindow(package, Path.GetDirectoryName(packagePath)!, args.GetValueOrDefault("disc-root"));
             MainWindow = window;
             _activationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
             _activationTimer.Tick += (_, _) =>
             {
                 if (_activateEvent.WaitOne(0))
                 {
-                    window.Show();
-                    if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
-                    window.Activate();
-                    window.Topmost = true;
-                    window.Topmost = false;
+                    var active = Current.MainWindow ?? window;
+                    active.Show();
+                    if (active.WindowState == WindowState.Minimized) active.WindowState = WindowState.Normal;
+                    active.Activate();
+                    active.Topmost = true;
+                    active.Topmost = false;
                 }
             };
             _activationTimer.Start();

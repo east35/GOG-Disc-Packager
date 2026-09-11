@@ -10,7 +10,7 @@
         </Grid.RowDefinitions>
         <StackPanel>
             <TextBlock Text="GOG DISC PACKAGER" FontSize="28" FontWeight="SemiBold"/>
-            <TextBlock Text="Create a trustworthy one-product physical release from a stock GOG setup family."
+            <TextBlock Text="Create trustworthy physical releases from stock GOG setup files."
                        Foreground="#AEB7C7" Margin="0,5,0,18"/>
         </StackPanel>
 
@@ -22,6 +22,7 @@
                 <ComboBox x:Name="DeploymentTypeBox" Width="280" SelectedIndex="0" SelectionChanged="DeploymentTypeBox_SelectionChanged">
                     <ComboBoxItem Content="Offline media (installer payload on media)"/>
                     <ComboBoxItem Content="GOG Key Media (download when installing)"/>
+                    <ComboBoxItem Content="Offline collection (multiple games on one disc)"/>
                 </ComboBox>
             </StackPanel>
             <Grid x:Name="KeyIdentityPanel" Visibility="Collapsed" Margin="0,0,0,10">

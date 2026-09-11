@@ -44,6 +44,18 @@ number, and enable verify-after-write. Mount and test ISOs before burning them.
 Windows may ignore `autorun.inf`. If nothing opens automatically, run
 `Launch.exe` from the disc.
 
+### Put multiple games on one disc (nightly)
+
+Choose **Offline collection**, then select a parent folder containing one
+subfolder per game. Each game folder must contain exactly one stock
+`setup_*.exe` family and may contain an `Extras` folder. The collection launcher
+lets you choose a game and then opens its normal install, play, extras, and
+uninstall screen.
+
+The initial nightly implementation builds one collection disc only. It rejects
+a collection that does not fit the selected medium; multi-disc collections and
+per-game artwork are not yet supported.
+
 ## Make GOG Key Media
 
 1. Choose **GOG Key Media**.

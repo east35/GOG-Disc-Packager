@@ -1,5 +1,14 @@
 using GogDisc.Core;
 
+if (args.Length >= 2 && args[0].Equals("--inspect-collection", StringComparison.OrdinalIgnoreCase))
+{
+    var collection = SetupCollectionScanner.Scan(args[1]);
+    Console.WriteLine($"Collection: {collection.Games.Count} games ({collection.TotalBytes / 1024d / 1024d / 1024d:N2} GiB)");
+    foreach (var game in collection.Games)
+        Console.WriteLine($"  {game.Title}: {game.Family.InstallerFiles.Count} installer file(s), {game.Family.Extras.Count} extra(s), {(game.Family.InstallerBytes + game.Family.ExtrasBytes) / 1024d / 1024d:N1} MiB");
+    return 0;
+}
+
 if (args.Length >= 2 && args[0].Equals("--inspect", StringComparison.OrdinalIgnoreCase))
 {
     var extras = args.Length >= 3 && Directory.Exists(args[2]) ? args[2] : null;
@@ -49,6 +58,7 @@ if (args.Length >= 2 && args[0].Equals("--launcher-smoke", StringComparison.Ordi
 var failures = new List<string>();
 await Run("Natural sorting", TestNaturalSorting);
 await Run("Setup family scanning", TestSetupScanning);
+await Run("Offline collection package", TestOfflineCollection);
 await Run("Disc allocation", TestDiscAllocation);
 await Run("Mixed media economy", TestMixedMediaEconomy);
 await Run("Package build and staging", TestBuildAndStage);
@@ -108,6 +118,48 @@ Task TestSetupScanning()
     Equal(1, family.ExcludedPatches.Count);
     Equal(2, family.Extras.Count);
     return Task.CompletedTask;
+}
+
+async Task TestOfflineCollection()
+{
+    using var fixture = new TempFixture();
+    var collectionRoot = fixture.Directory("DOOM");
+    var first = Path.Combine(collectionRoot, "DOOM 1");
+    var second = Path.Combine(collectionRoot, "DOOM 2");
+    Directory.CreateDirectory(first);
+    Directory.CreateDirectory(second);
+    File.WriteAllBytes(Path.Combine(first, "setup_doom_1.9_(1).exe"), new byte[512]);
+    File.WriteAllBytes(Path.Combine(second, "setup_doom_ii_1.9_(2).exe"), new byte[640]);
+    File.WriteAllBytes(Path.Combine(second, "setup_doom_ii_1.9_(2)-1.bin"), new byte[1024]);
+    var extras = Path.Combine(second, "Extras");
+    Directory.CreateDirectory(extras);
+    File.WriteAllText(Path.Combine(extras, "manual.txt"), "manual");
+
+    var collection = SetupCollectionScanner.Scan(collectionRoot);
+    Equal(2, collection.Games.Count);
+    Equal("DOOM 1", collection.Games[0].Title);
+    var result = await CollectionBuilder.BuildAsync(new CollectionBuildRequest
+    {
+        Title = "DOOM Collection",
+        Version = "1.0",
+        Collection = collection,
+        CapacityBytes = 10_000,
+        ReserveBytes = 256,
+        MediaName = "Test media",
+        OutputDirectory = fixture.Directory("output"),
+        LauncherExecutable = fixture.File("Launch.exe", 128)
+    });
+
+    var discRoot = Path.Combine(result.PackageDirectory, "Disc 01 of 01");
+    var media = DiscMedia.Load(discRoot);
+    Equal(2, media.Package.CollectionGames.Count);
+    Equal(4, media.Package.Files.Count);
+    True(File.Exists(Path.Combine(discRoot, media.Package.CollectionGames[1].InstallerRelativePath)),
+        "A collection game installer was not packaged.");
+    True(File.Exists(Path.Combine(discRoot, media.Package.CollectionGames[1].ExtrasRelativePath, "manual.txt")),
+        "Per-game extras were not packaged.");
+    True(media.Package.CollectionGames.Select(game => game.GameId).Distinct().Count() == 2,
+        "Collection games did not receive distinct install-state identities.");
 }
 
 Task TestDiscAllocation()

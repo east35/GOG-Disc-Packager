@@ -94,7 +94,20 @@ public sealed class PackageManifest
     public string BackgroundFile { get; set; } = "";
     public string CoverFile { get; set; } = "";
     public string IconFile { get; set; } = "game.ico";
+    public string ExtrasRelativePath { get; set; } = "Extras";
     public List<PackageDiscInfo> DiscLayout { get; set; } = [];
+    public List<string> InstallDetectionNames { get; set; } = [];
+    public List<PackageFileEntry> Files { get; set; } = [];
+    public List<CollectionGameManifest> CollectionGames { get; set; } = [];
+}
+
+public sealed class CollectionGameManifest
+{
+    public string GameId { get; set; } = Guid.NewGuid().ToString("N");
+    public string Title { get; set; } = "";
+    public string Version { get; set; } = "";
+    public string InstallerRelativePath { get; set; } = "";
+    public string ExtrasRelativePath { get; set; } = "";
     public List<string> InstallDetectionNames { get; set; } = [];
     public List<PackageFileEntry> Files { get; set; } = [];
 }
@@ -193,6 +206,30 @@ public sealed class SetupFamily
     public required IReadOnlyList<string> ExcludedPatches { get; init; }
     public long InstallerBytes => InstallerFiles.Sum(file => file.Size);
     public long ExtrasBytes => Extras.Sum(file => file.Size);
+}
+
+public sealed record SetupCollectionGame(string Title, string Version, SetupFamily Family);
+
+public sealed class SetupCollection
+{
+    public required string RootDirectory { get; init; }
+    public required IReadOnlyList<SetupCollectionGame> Games { get; init; }
+    public long TotalBytes => Games.Sum(game => game.Family.InstallerBytes + game.Family.ExtrasBytes);
+}
+
+public sealed class CollectionBuildRequest
+{
+    public required string Title { get; init; }
+    public required string Version { get; init; }
+    public required SetupCollection Collection { get; init; }
+    public required long CapacityBytes { get; init; }
+    public required long ReserveBytes { get; init; }
+    public required string MediaName { get; init; }
+    public required string OutputDirectory { get; init; }
+    public required string LauncherExecutable { get; init; }
+    public string? BackgroundImage { get; init; }
+    public string? CoverImage { get; init; }
+    public string? IconImage { get; init; }
 }
 
 public sealed class PlannedDisc
