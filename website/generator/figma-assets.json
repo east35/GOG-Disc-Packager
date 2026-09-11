@@ -1,0 +1,289 @@
+[
+  {
+    "name": "gog-white",
+    "file": "gog-white.svg",
+    "url": "https://www.figma.com/api/mcp/asset/687a79f1-8c5f-4f0d-870a-10c42bb3dcbd.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "gog-black",
+    "file": "gog-black.svg",
+    "url": "https://www.figma.com/api/mcp/asset/a8a6aec3-b9d6-4327-bbe8-4d724cd6c0c2.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "disc-count",
+    "file": "disc-count.svg",
+    "url": "https://www.figma.com/api/mcp/asset/cbb1d651-78a8-4d14-846e-438d10f0de77.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-players",
+    "file": "feature-players.svg",
+    "url": "https://www.figma.com/api/mcp/asset/d229b3d8-efe4-452a-944e-acec8e678847.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-storage",
+    "file": "feature-storage.svg",
+    "url": "https://www.figma.com/api/mcp/asset/cac3a07b-d436-434a-a6c5-3fb619e09634.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-network",
+    "file": "feature-network.svg",
+    "url": "https://www.figma.com/api/mcp/asset/2e5a3b3d-46d1-4219-b9e8-56ae7a4e7170.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-achievements",
+    "file": "feature-achievements.svg",
+    "url": "https://www.figma.com/api/mcp/asset/8a350824-55a1-4838-8f76-972fbe2d0f98.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-cloud",
+    "file": "feature-cloud.svg",
+    "url": "https://www.figma.com/api/mcp/asset/346df94a-efbe-4dfc-93bd-f9c6dd3a849c.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-controller",
+    "file": "feature-controller.svg",
+    "url": "https://www.figma.com/api/mcp/asset/6c8be30c-29a8-4e15-9e17-f519af4c4f8f.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "feature-offline",
+    "file": "feature-offline.svg",
+    "url": "https://www.figma.com/api/mcp/asset/978930ea-2014-4b5e-8079-d5d24171f631.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "warning-icon",
+    "file": "warning-icon.svg",
+    "url": "https://www.figma.com/api/mcp/asset/80286e57-6b2b-441a-a71d-0118afb20ad6.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "warning-word",
+    "file": "warning-word.svg",
+    "url": "https://www.figma.com/api/mcp/asset/54642628-cacc-4ba5-a844-82e3b3e3ced6.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "crop-14",
+    "file": "crop-14.svg",
+    "url": "https://www.figma.com/api/mcp/asset/000122ec-50c4-4c8c-ae60-34194eac8439.svg",
+    "node": "1:431",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "crop-wide",
+    "file": "crop-wide.svg",
+    "url": "https://www.figma.com/api/mcp/asset/34bd23c4-7799-4fc0-959d-2665176c3b48.svg",
+    "node": "1:476",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "esrb-m",
+    "file": "esrb-m.svg",
+    "url": "https://www.figma.com/api/mcp/asset/529873ea-00ad-45ff-9cb3-569205be9a8d.svg",
+    "node": "1:1128",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "esrb-t",
+    "file": "esrb-t.svg",
+    "url": "https://www.figma.com/api/mcp/asset/8942af1c-e5f5-4268-ab0c-0764f7fa69f0.svg",
+    "node": "1:1128",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "esrb-e",
+    "file": "esrb-e.svg",
+    "url": "https://www.figma.com/api/mcp/asset/e50aeb04-99cc-4134-a50a-b09a9f6e3e85.svg",
+    "node": "1:1128",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "rebel-wolves",
+    "file": "rebel-wolves.svg",
+    "url": "https://www.figma.com/api/mcp/asset/c58eaa9f-a4ca-4666-889b-4868e6557ecd.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "cdpr",
+    "file": "cdpr.svg",
+    "url": "https://www.figma.com/api/mcp/asset/2b8ebd2a-7401-450e-aba3-a04662838ae5.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "bandai-namco",
+    "file": "bandai-namco.svg",
+    "url": "https://www.figma.com/api/mcp/asset/1d76ac1c-d49c-45e8-a4d8-739041fa9366.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "wb",
+    "file": "wb.svg",
+    "url": "https://www.figma.com/api/mcp/asset/b01d27c9-a224-4462-87cb-9434d302b6c4.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "eidos",
+    "file": "eidos.svg",
+    "url": "https://www.figma.com/api/mcp/asset/0c59ef80-4d4c-495c-9347-6e0df4e28e00.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "square",
+    "file": "square.svg",
+    "url": "https://www.figma.com/api/mcp/asset/0ea6fcad-ae21-406b-a73e-8f6475238be4.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "square-enix",
+    "file": "square-enix.svg",
+    "url": "https://www.figma.com/api/mcp/asset/e7240359-0d1e-492c-95ed-a631fa5fbeb8.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "capcom",
+    "file": "capcom.svg",
+    "url": "https://www.figma.com/api/mcp/asset/857938b8-5195-4b22-bae0-c3194b4de4a4.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "blu-ray",
+    "file": "blu-ray.svg",
+    "url": "https://www.figma.com/api/mcp/asset/74cf7751-1a86-4e9c-ac3c-a4f50ca3b145.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "cd",
+    "file": "cd.svg",
+    "url": "https://www.figma.com/api/mcp/asset/b2fc5687-884a-4061-b11d-e195b8b816c8.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "dvd",
+    "file": "dvd.svg",
+    "url": "https://www.figma.com/api/mcp/asset/265c3ef0-12c0-4133-bcb4-2ca54fd9a550.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "arkane",
+    "file": "arkane.svg",
+    "url": "https://www.figma.com/api/mcp/asset/4b4784a0-0cb7-4a49-9774-18eb6f1928be.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "ion-storm",
+    "file": "ion-storm.svg",
+    "url": "https://www.figma.com/api/mcp/asset/fad1c009-a0da-4b6d-97b4-1ca770668afb.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "bethesda",
+    "file": "bethesda.svg",
+    "url": "https://www.figma.com/api/mcp/asset/814288ba-4cf5-400f-a88d-59ecdcd2b66c.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "devolver",
+    "file": "devolver.svg",
+    "url": "https://www.figma.com/api/mcp/asset/3206dec1-e799-4f23-8601-f6b4fa524492.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "topware",
+    "file": "topware.png",
+    "url": "https://www.figma.com/api/mcp/asset/73340610-a7f4-4a60-844c-1a224eaea14f.png",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "unreal",
+    "file": "unreal.svg",
+    "url": "https://www.figma.com/api/mcp/asset/2868a874-e6c4-4511-a7f9-054777ee37c4.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "redengine",
+    "file": "redengine.svg",
+    "url": "https://www.figma.com/api/mcp/asset/3dc46087-768b-4d8a-830a-391cbfeecffc.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "ubisoft",
+    "file": "ubisoft.svg",
+    "url": "https://www.figma.com/api/mcp/asset/b1f2284f-73f3-48ee-bab5-76c6c7337228.svg",
+    "node": "1:1162",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "game-key",
+    "file": "game-key.svg",
+    "url": "https://www.figma.com/api/mcp/asset/753392c5-b2b0-457c-a98e-2216fe7efde9.svg",
+    "node": "1:449",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "game-key-disc",
+    "file": "game-key-disc.svg",
+    "url": "https://www.figma.com/api/mcp/asset/ca675b2c-16bb-4080-bfe4-30e9116b46e9.svg",
+    "node": "1:449",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "key-install",
+    "file": "key-install.svg",
+    "url": "https://www.figma.com/api/mcp/asset/78a0fc58-927e-4fa8-bb33-40124dc1cad1.svg",
+    "node": "1:449",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "key-backup",
+    "file": "key-backup.svg",
+    "url": "https://www.figma.com/api/mcp/asset/f2c2af3b-5675-4fd7-8696-139d7ae06517.svg",
+    "node": "1:449",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  },
+  {
+    "name": "key-offline",
+    "file": "key-offline.svg",
+    "url": "https://www.figma.com/api/mcp/asset/fda164aa-9fbd-4a9e-aace-1561ed3f13d4.svg",
+    "node": "1:449",
+    "fileKey": "CBR9nICUoNR4Km00Dc8Nui"
+  }
+]
