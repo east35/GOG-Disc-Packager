@@ -644,8 +644,36 @@ public partial class MainWindow : Window
 
     private async void SignInGog_Click(object sender, RoutedEventArgs e)
     {
+        if (GogAuthentication.HasCredentials())
+        {
+            SignOutOfGog();
+            return;
+        }
         // A fresh sign-in can reveal add-ons the unsigned form could not list.
         if (PromptForSignIn() && _resolvedGame is not null) await LoadOwnedDlcsAsync();
+    }
+
+    /// <summary>
+    /// Discards the stored sign-in. The listed add-ons and any validation came from that account,
+    /// so they go with it rather than lingering as stale account-derived state.
+    /// </summary>
+    private void SignOutOfGog()
+    {
+        // Signing out is cheap to undo, but the add-on selections and disc art chosen against this
+        // account are not, so only ask when there is actually something to lose.
+        if ((_dlcs.Count > 0 || _validatedKeyDiscs is not null) &&
+            MessageBox.Show(this, "Sign out of GOG? The listed add-ons and this validation will be cleared.",
+                "GOG Disc Packager", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+        GogAuthentication.ClearCredentials();
+        _dlcs.Clear();
+        DlcList.ItemsSource = null;
+        DlcHint.Text = "Sign in to GOG (button above) to list the add-ons your account owns.";
+        UpdateAccountStatus();
+        UpdateKeyLayoutHint();
+        ResetScan();
+        Log("Signed out of GOG.");
+        StatusText.Text = "Signed out of GOG";
     }
 
     /// <summary>
@@ -669,8 +697,9 @@ public partial class MainWindow : Window
         AccountStatusText.Text = signedIn
             ? "Signed in. Key Media validation can check what GOG will deliver for this product."
             : "Not signed in. This app signs in separately from GOG Galaxy and the GOG website.";
-        AccountSignInButton.Content = signedIn ? "Sign in again…" : "Sign in to GOG…";
+        AccountSignInButton.Content = signedIn ? "Sign out" : "Sign in to GOG…";
     }
+
     private void ShowError(string message)
     {
         Log("ERROR: " + message);
