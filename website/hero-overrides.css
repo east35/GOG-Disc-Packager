@@ -8,9 +8,8 @@ h1 span em {
 .watch-video {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
   margin-left: 14px;
-  padding: 16px 18px;
+  padding: 17px 22px;
   border: 1px solid #c7afff55;
   border-radius: 7px;
   color: #d8c5f2;
