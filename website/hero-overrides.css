@@ -4,3 +4,28 @@ h1 span em {
   font-synthesis: style;
   font-weight: 500;
 }
+
+.watch-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 14px;
+  padding: 16px 18px;
+  border: 1px solid #c7afff55;
+  border-radius: 7px;
+  color: #d8c5f2;
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color .2s, background .2s;
+}
+
+.watch-video:hover {
+  border-color: #c7afff;
+  background: #c7afff12;
+}
+
+@media (max-width: 900px) {
+  .watch-video {
+    margin: 12px 0 0;
+  }
+}
