@@ -24,6 +24,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         OutputBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GOG Disc Packages");
         LauncherBox.Text = FindLauncher();
+        UpdateAccountStatus();
     }
 
     private void BrowseSetup_Click(object sender, RoutedEventArgs e)
@@ -105,6 +106,8 @@ public partial class MainWindow : Window
             // The public catalog lists bundle SKUs that carry no build and omits some base games,
             // so search the account's own library — you must own a title to package it anyway.
             IReadOnlyList<GogCatalogProduct> products;
+            // The library search needs this app's own sign-in, so offer it before falling back to the catalog.
+            if (IsKeyMedia) PromptForSignIn();
             if (GogAuthentication.HasCredentials())
             {
                 StatusText.Text = "Searching your GOG library…";
@@ -142,7 +145,7 @@ public partial class MainWindow : Window
         if (_resolvedGame is null || !IsKeyMedia) { UpdateKeyLayoutHint(); return; }
         if (!GogAuthentication.HasCredentials())
         {
-            DlcHint.Text = "Sign in to GOG to list the add-ons your account owns.";
+            DlcHint.Text = "Sign in to GOG (button above) to list the add-ons your account owns.";
             UpdateKeyLayoutHint();
             return;
         }
@@ -209,6 +212,8 @@ public partial class MainWindow : Window
         if (KeyIdentityPanel is null) return;
         var key = IsKeyMedia;
         var collection = IsCollection;
+        KeyAccountPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
+        UpdateAccountStatus();
         KeyIdentityPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
         KeyDlcPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
         // Key Media derives the product type from each disc's role, so the picker would be a no-op there.
@@ -312,11 +317,14 @@ public partial class MainWindow : Window
                       $"Platform/language: {product.Platform}/{product.Language}\n" +
                       $"Layout: {(split ? $"{discs.Count} disc(s), one per product" : "one disc")}\n\n";
 
+        // Validation is the last gate before media is burned, so ask for the sign-in rather than skipping the check.
+        if (!GogAuthentication.HasCredentials()) PromptForSignIn();
         if (!GogAuthentication.HasCredentials())
         {
             _validatedKeyDiscs = discs;
             SummaryText.Text = heading + "Not signed in to GOG, so this product could not be checked.\n" +
-                "Sign in and validate again before burning — some store SKUs carry no installable build.";
+                "This app signs in separately from GOG Galaxy and the GOG website — use \"Sign in to GOG\" above,\n" +
+                "then validate again before burning, because some store SKUs carry no installable build.";
             StatusText.Text = "Key Media identity is valid, but unverified";
             return true;
         }
@@ -601,6 +609,36 @@ public partial class MainWindow : Window
         LogBox.ScrollToEnd();
     }
 
+
+    private async void SignInGog_Click(object sender, RoutedEventArgs e)
+    {
+        // A fresh sign-in can reveal add-ons the unsigned form could not list.
+        if (PromptForSignIn() && _resolvedGame is not null) await LoadOwnedDlcsAsync();
+    }
+
+    /// <summary>
+    /// Shows the packager's own GOG sign-in. Returns true once credentials exist, whether this
+    /// call created them or they were already there.
+    /// </summary>
+    private bool PromptForSignIn()
+    {
+        if (GogAuthentication.HasCredentials()) { UpdateAccountStatus(); return true; }
+        var dialog = new GogSignInWindow { Owner = this };
+        var signedIn = dialog.ShowDialog() == true;
+        UpdateAccountStatus();
+        if (signedIn) Log("Signed in to GOG.");
+        return signedIn;
+    }
+
+    private void UpdateAccountStatus()
+    {
+        if (AccountStatusText is null) return;
+        var signedIn = GogAuthentication.HasCredentials();
+        AccountStatusText.Text = signedIn
+            ? "Signed in. Key Media validation can check what GOG will deliver for this product."
+            : "Not signed in. This app signs in separately from GOG Galaxy and the GOG website.";
+        AccountSignInButton.Content = signedIn ? "Sign in again…" : "Sign in to GOG…";
+    }
     private void ShowError(string message)
     {
         Log("ERROR: " + message);

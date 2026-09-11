@@ -71,9 +71,13 @@ per-game artwork are not yet supported.
 ## Make GOG Key Media
 
 1. Choose **GOG Key Media**.
-2. Enter a game title or paste its GOG store URL and select the matching product.
-3. Build the package.
-4. Burn or copy the **contents** of the generated `Title (Game Key)` folder to any filesystem-based CD, DVD, Blu-ray, or USB drive.
+2. Select **Sign in to GOG**. The packager keeps its own sign-in: being signed in
+   to GOG Galaxy or the GOG website does not sign in this app. Signing in lets the
+   packager search your library, list the add-ons you own, and confirm GOG can
+   actually deliver the product before anything is burned.
+3. Enter a game title or paste its GOG store URL and select the matching product.
+4. Build the package.
+5. Burn or copy the **contents** of the generated `Title (Game Key)` folder to any filesystem-based CD, DVD, Blu-ray, or USB drive.
 
 During installation, the launcher opens GOG's browser sign-in and confirms that
 the account owns the game. Credentials, tokens, installers, and temporary

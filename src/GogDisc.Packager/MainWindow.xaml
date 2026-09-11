@@ -25,6 +25,14 @@
                     <ComboBoxItem Content="Game-Key Disc (download online GOG backup)"/>
                 </ComboBox>
             </StackPanel>
+            <Grid x:Name="KeyAccountPanel" Visibility="Collapsed" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="165"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="GOG account" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" x:Name="AccountStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Foreground="#8F99AA" Margin="0,4"/>
+                <Button Grid.Column="2" x:Name="AccountSignInButton" Content="Sign in to GOG…" Click="SignInGog_Click"/>
+            </Grid>
+
             <Grid x:Name="KeyIdentityPanel" Visibility="Collapsed" Margin="0,0,0,10">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="165"/><ColumnDefinition Width="280"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
