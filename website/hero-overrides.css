@@ -5,10 +5,23 @@ h1 span em {
   font-weight: 500;
 }
 
+.hero-actions {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+}
+
+.hero-actions .download,
+.hero-actions .watch-video {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  margin-left: 0;
+}
+
 .watch-video {
   display: inline-flex;
   align-items: center;
-  margin-left: 14px;
   padding: 17px 22px;
   border: 1px solid #c7afff55;
   border-radius: 7px;
@@ -24,7 +37,12 @@ h1 span em {
 }
 
 @media (max-width: 900px) {
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .watch-video {
-    margin: 12px 0 0;
+    margin: 0;
   }
 }
