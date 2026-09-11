@@ -356,7 +356,21 @@ public partial class MainWindow : Window
     {
         var runtime = new GogDlRuntime();
         await runtime.EnsureCurrentAsync(cancellationToken);
-        if (GogAuthentication.HasCredentials()) return;
+        if (GogAuthentication.HasCredentials())
+        {
+            // A stored credential can still be dead — GOG revokes refresh tokens when the account
+            // password changes — and it stays on disk looking valid, so prove it before relying on it.
+            try
+            {
+                await runtime.RefreshAuthenticationAsync(cancellationToken);
+                return;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _log.Write("Stored GOG sign-in rejected, asking for a new one: " + ex.Message);
+                EstimateText.Text = "The saved GOG sign-in expired. Sign in again to continue.";
+            }
+        }
         Process.Start(new ProcessStartInfo(GogAuthentication.LoginUrl) { UseShellExecute = true });
         var code = await WaitForGogCodeAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(code)) throw new OperationCanceledException("GOG sign-in was cancelled.");

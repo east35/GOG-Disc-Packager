@@ -105,13 +105,20 @@ public partial class MainWindow : Window
         {
             // The public catalog lists bundle SKUs that carry no build and omits some base games,
             // so search the account's own library — you must own a title to package it anyway.
-            IReadOnlyList<GogCatalogProduct> products;
             // The library search needs this app's own sign-in, so offer it before falling back to the catalog.
             if (IsKeyMedia) PromptForSignIn();
+            IReadOnlyList<GogCatalogProduct> products;
             if (GogAuthentication.HasCredentials())
             {
                 StatusText.Text = "Searching your GOG library…";
-                products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None);
+                UnauthorizedAccessException? rejected = null;
+                try { products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None); }
+                catch (UnauthorizedAccessException ex) { rejected = ex; products = []; }
+                if (rejected is not null)
+                {
+                    if (!RecoverSignIn(rejected)) return;
+                    products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None);
+                }
                 if (products.Count == 0)
                     throw new InvalidOperationException(
                         $"No owned GOG game matches \"{GameLookupBox.Text.Trim()}\". Only games on your GOG account can be packaged.");
@@ -330,9 +337,11 @@ public partial class MainWindow : Window
         }
 
         StatusText.Text = "Checking what GOG can deliver for this product…";
+        var token = _cancellation?.Token ?? CancellationToken.None;
         GogKeyAvailability availability;
-        try { availability = await GogKeyAvailability.ProbeAsync(product, _cancellation?.Token ?? CancellationToken.None); }
+        try { availability = await ProbeWithSignInRecoveryAsync(product, token); }
         catch (OperationCanceledException) { throw; }
+        catch (SignInDeclinedException) { ResetScan(); StatusText.Text = "Validation cancelled"; return false; }
         catch (Exception ex) { ResetScan(); ShowError(ex.Message); return false; }
 
         foreach (var disc in discs)
@@ -609,6 +618,29 @@ public partial class MainWindow : Window
         LogBox.ScrollToEnd();
     }
 
+    /// <summary>Probes GOG, giving a rejected sign-in one chance to be replaced before failing.</summary>
+    private async Task<GogKeyAvailability> ProbeWithSignInRecoveryAsync(GogKeyProduct product, CancellationToken cancellationToken)
+    {
+        try { return await GogKeyAvailability.ProbeAsync(product, cancellationToken); }
+        catch (UnauthorizedAccessException ex)
+        {
+            if (!RecoverSignIn(ex)) throw new SignInDeclinedException();
+            return await GogKeyAvailability.ProbeAsync(product, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Handles GOG rejecting a credential that looked fine on disk — a password change revokes it.
+    /// Core has already discarded it, so this just explains what happened and collects a new sign-in.
+    /// Returns true when the caller should retry.
+    /// </summary>
+    private bool RecoverSignIn(UnauthorizedAccessException rejection)
+    {
+        Log("GOG rejected the saved sign-in: " + rejection.Message);
+        UpdateAccountStatus();
+        MessageBox.Show(this, rejection.Message, "GOG Disc Packager", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return PromptForSignIn();
+    }
 
     private async void SignInGog_Click(object sender, RoutedEventArgs e)
     {
