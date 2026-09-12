@@ -7,7 +7,7 @@ import {
 } from "./model.js";
 import {
   ART_SLOTS,
-  BRANDS,
+  backCopyLines,
   assetRef,
   setAssetRef,
   createRenderer,
@@ -15,7 +15,24 @@ import {
 import manifest from "./figma-assets.json";
 const $ = (s) => document.querySelector(s),
   form = $("#controls"),
-  words = (s) => s.replaceAll("-", " ");
+  words = (s) => s.replaceAll("-", " "),
+  staticAssetUrl = (file) =>
+    location.protocol === "file:"
+      ? `../public/${file}`
+      : `${import.meta.env.BASE_URL}${file}`,
+  templateAssetUrl = (file) =>
+    location.protocol === "file:"
+      ? `../public/assets/template/${file}`
+      : `${import.meta.env.BASE_URL}assets/template/${file}`;
+for (const el of document.querySelectorAll("[data-static-asset]"))
+  el.href = el.src = staticAssetUrl(el.dataset.staticAsset);
+const SCALABLE_ART_SLOTS = new Set([
+  "front",
+  "back",
+  "fullWrap",
+  "spineLogo",
+  "disc",
+]);
 let project = newProject(),
   images = {},
   activeSlot = "front",
@@ -51,17 +68,52 @@ function set(path, value) {
   for (const k of keys.slice(0, -1)) node = node[k] ??= {};
   node[keys.at(-1)] = value;
 }
+function backHighlightInputs() {
+  return [...form.querySelectorAll("[data-back-item]")];
+}
+function refreshBackCopyFields() {
+  const lines = backCopyLines(project.game.includedContent);
+  backHighlightInputs().forEach((input, index) => {
+    input.value = lines[index] || "";
+  });
+  updateBackCopyCounters();
+}
+function syncBackHighlights() {
+  project.game.includedContent = backHighlightInputs()
+    .map((input) => input.value.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+function updateBackCopyCounters() {
+  for (const counter of form.querySelectorAll("[data-count-for]")) {
+    const source = document.getElementById(counter.dataset.countFor);
+    if (!source) continue;
+    const length = source.value.length,
+      max = source.maxLength;
+    counter.textContent = String(length);
+    source.closest("label")?.classList.toggle(
+      "over-budget",
+      max > 0 && length > max,
+    );
+  }
+  const used = backHighlightInputs().filter((input) => input.value.trim()).length;
+  $("#back-highlight-count").textContent = String(used);
+}
 function populate() {
   for (const el of form.elements) {
     if (!el.name) continue;
+    const activeAsset = assetRef(project, activeSlot);
     el.value = el.name.startsWith("focal.")
-      ? (assetRef(project, activeSlot)?.focalPoint?.[el.name.at(-1)] ?? 0.5)
+      ? (activeAsset?.focalPoint?.[el.name.at(-1)] ?? 0.5)
+      : el.name === "asset.scale"
+        ? (activeAsset?.scale ?? 1)
       : el.name === "descriptors"
         ? (project.game.rating.descriptors || []).join(", ")
         : (get(el.name) ?? "");
   }
   for (const el of form.querySelectorAll("[data-feature]"))
     el.checked = project.game.features.includes(el.value);
+  refreshBackCopyFields();
   $("#approved").checked = !!assetRef(project, activeSlot)?.approved;
   $("#includes-title").checked = !!project.game.artwork.front?.includesTitle;
   labels();
@@ -104,11 +156,7 @@ function labels() {
 form.onsubmit = (e) => e.preventDefault();
 form.oninput = (e) => {
   const el = e.target;
-  if (el.dataset.brand !== undefined) {
-    project.game.brandLogos = [...form.querySelectorAll("[data-brand]")]
-      .map((i) => i.value)
-      .filter(Boolean);
-  } else if (el.dataset.feature !== undefined)
+  if (el.dataset.feature !== undefined)
     project.game.features = [
       ...form.querySelectorAll("[data-feature]:checked"),
     ].map((i) => i.value);
@@ -125,11 +173,17 @@ form.oninput = (e) => {
       a.focalPoint ??= { x: 0.5, y: 0.5 };
       a.focalPoint[el.name.at(-1)] = Number(el.value);
     }
+  } else if (el.name === "asset.scale") {
+    const a = assetRef(project, activeSlot);
+    if (a) a.scale = Number(el.value);
+    $("#art-scale-value").textContent =
+      Math.round(Number(el.value) * 100) + "%";
   } else if (el.name === "descriptors")
     project.game.rating.descriptors = el.value
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+  else if (el.dataset.backItem !== undefined) syncBackHighlights();
   else if (el.name) {
     if (el.type === "number" && !el.validity.valid) return;
     set(el.name, el.type === "number" ? Number(el.value) : el.value);
@@ -139,6 +193,7 @@ form.oninput = (e) => {
       discNumber = Math.min(discNumber, project.media.discCount);
     }
   }
+  updateBackCopyCounters();
   render();
 };
 const read = (file) =>
@@ -165,6 +220,38 @@ $("#art-slot").onchange = (e) => {
 };
 function refreshArtwork() {
   const a = assetRef(project, activeSlot);
+  const logo = activeSlot === "spineLogo",
+    scalable = SCALABLE_ART_SLOTS.has(activeSlot),
+    scaleInput = form.elements.namedItem("asset.scale"),
+    scale = a?.scale ?? 1;
+  $("#art-upload-label").textContent = logo
+    ? "Choose game logo"
+    : "Choose artwork";
+  $("#art-upload-help").textContent = logo
+    ? "Transparent PNG · up to 15 MB"
+    : "PNG, JPG or WebP · up to 15 MB";
+  $("#art").accept = logo
+    ? "image/png,.png"
+    : "image/png,image/jpeg,image/webp";
+  $("#art-x-label").textContent = logo
+    ? "Front logo position · horizontal"
+    : "Focal point · horizontal";
+  $("#art-y-label").textContent = logo
+    ? "Front logo position · vertical"
+    : "Vertical";
+  $("#art-scale-control").hidden = !scalable;
+  $("#art-scale-label").textContent =
+    {
+      front: "Front cover size",
+      back: "Back cover size",
+      fullWrap: "Full-wrap size",
+      spineLogo: "Front logo size",
+      disc: "Disc artwork size",
+    }[activeSlot] || "Image size";
+  scaleInput.min = logo ? "0.4" : "1";
+  scaleInput.max = logo ? "1.6" : "2";
+  scaleInput.value = scale;
+  $("#art-scale-value").textContent = Math.round(scale * 100) + "%";
   $("#approved").checked = !!a?.approved;
   for (const k of ["x", "y"])
     form.elements.namedItem("focal." + k).value = a?.focalPoint?.[k] ?? 0.5;
@@ -173,19 +260,6 @@ function refreshArtwork() {
     ? `${ART_SLOTS[activeSlot]} · ${img.width} × ${img.height} px`
     : `No ${ART_SLOTS[activeSlot].toLowerCase()} selected.`;
   $("#remove-art").disabled = !a;
-}
-for (let n = 0; n < 2; n++) {
-  const label = document.createElement("label");
-  label.textContent = n
-    ? "Publisher / engine logo"
-    : "Developer / publisher logo";
-  const select = document.createElement("select");
-  select.dataset.brand = String(n);
-  select.append(new Option("None", ""));
-  for (const [key, title] of Object.entries(BRANDS))
-    select.append(new Option(title, key));
-  label.append(select);
-  $("#brand-fields").append(label);
 }
 $("#remove-art").onclick = () => {
   ++token;
@@ -201,10 +275,16 @@ $("#art").onchange = async (e) => {
     slot = activeSlot;
   try {
     if (
-      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
+      (slot === "spineLogo"
+        ? file.type !== "image/png"
+        : !["image/png", "image/jpeg", "image/webp"].includes(file.type)) ||
       file.size > 15 * 1024 * 1024
     )
-      throw Error("Choose a PNG, JPG or WebP smaller than 15 MB.");
+      throw Error(
+        slot === "spineLogo"
+          ? "Choose a PNG game logo smaller than 15 MB."
+          : "Choose a PNG, JPG or WebP smaller than 15 MB.",
+      );
     const url = await read(file),
       img = await decode(url);
     if (t !== token) return;
@@ -214,6 +294,7 @@ $("#art").onchange = async (e) => {
       sourceId: file.name,
       imageUrl: url,
       focalPoint: { x: 0.5, y: 0.5 },
+      ...(SCALABLE_ART_SLOTS.has(slot) ? { scale: 1 } : {}),
       attribution: file.name,
       approved: false,
       ...(slot === "front"
@@ -223,7 +304,10 @@ $("#art").onchange = async (e) => {
     refreshArtwork();
     render();
     $("#status").textContent =
-      ART_SLOTS[slot] + " loaded. Review the crop and approve your selection.";
+      slot === "spineLogo"
+        ? "Game logo loaded. It will be reused on the front, spine, and disc labels."
+        : ART_SLOTS[slot] +
+          " loaded. Review the crop and approve your selection.";
   } catch (err) {
     $("#status").textContent = err.message;
   }
@@ -261,9 +345,6 @@ $("#open").onchange = async (e) => {
     discNumber = 1;
     populate();
     refreshArtwork();
-    for (const select of form.querySelectorAll("[data-brand]"))
-      select.value =
-        project.game.brandLogos?.[Number(select.dataset.brand)] || "";
     $("#status").textContent = failed.length
       ? "Project opened. Re-upload: " + failed.join(", ") + "."
       : "Project opened with artwork and template settings.";
@@ -381,7 +462,7 @@ Promise.all(
   manifest.map(async (a) => {
     try {
       templateAssets[a.name] = await decode(
-        `${import.meta.env.BASE_URL}assets/template/${a.file}`,
+        templateAssetUrl(a.file),
       );
     } catch {
       assetErrors.push(

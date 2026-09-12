@@ -1,4 +1,8 @@
-import { BRANDS, ratingAsset } from "./template.js";
+import {
+  BACK_CONTENT_LIMITS,
+  backCopyLines,
+  ratingAsset,
+} from "./template.js";
 export const FEATURES = [
   "single-player",
   "multiplayer",
@@ -17,7 +21,7 @@ export const newProject = () => ({
     developer: "",
     publisher: "",
     rating: { system: "none" },
-    artwork: { front: null },
+    artwork: { front: null, spineTitleMode: "logo" },
     features: ["single-player", "offline-installer"],
     archive: { date: new Date().toISOString().slice(0, 10) },
   },
@@ -65,7 +69,6 @@ export function parseProject(raw) {
     g.copyright,
     g.rating.value,
     g.archive.archivist,
-    g.archive.url,
     ...Object.values(g.requirements || {}),
   ])
     if (v != null && typeof v !== "string") fail();
@@ -84,24 +87,22 @@ export function parseProject(raw) {
     )
       fail();
   if (
-    g.brandLogos != null &&
-    (!Array.isArray(g.brandLogos) ||
-      g.brandLogos.length > 2 ||
-      g.brandLogos.some((b) => !Object.hasOwn(BRANDS, b)))
-  )
-    fail();
-  if (
     g.artwork.screenshots != null &&
     (!Array.isArray(g.artwork.screenshots) || g.artwork.screenshots.length > 3)
   )
     fail();
-  for (const a of [
-    g.artwork.front,
-    g.artwork.back,
-    g.artwork.fullWrap,
-    g.artwork.spineLogo,
-    g.artwork.disc,
-    ...(g.artwork.screenshots || []),
+  if (
+    g.artwork.spineTitleMode != null &&
+    !["logo", "text"].includes(g.artwork.spineTitleMode)
+  )
+    fail();
+  for (const [slot, a] of [
+    ["front", g.artwork.front],
+    ["back", g.artwork.back],
+    ["fullWrap", g.artwork.fullWrap],
+    ["spineLogo", g.artwork.spineLogo],
+    ["disc", g.artwork.disc],
+    ...(g.artwork.screenshots || []).map((a, i) => [`screenshot${i}`, a]),
   ]) {
     if (a == null) continue;
     if (
@@ -111,6 +112,11 @@ export function parseProject(raw) {
       fail();
     if (a.approved != null && typeof a.approved !== "boolean") fail();
     if (a.includesTitle != null && typeof a.includesTitle !== "boolean") fail();
+    if (a.scale != null) {
+      const min = slot === "spineLogo" ? 0.4 : 1,
+        max = slot === "spineLogo" ? 1.6 : 2;
+      if (!Number.isFinite(a.scale) || a.scale < min || a.scale > max) fail();
+    }
     if (
       a.focalPoint &&
       ["x", "y"].some(
@@ -122,11 +128,34 @@ export function parseProject(raw) {
     )
       fail();
   }
+  g.artwork.spineTitleMode ??= "logo";
+  // Migrate projects from the logo/QR version of the generator.
+  delete g.brandLogos;
+  delete g.archive.url;
   syncLabels(p);
   return p;
 }
 export function projectChecks(p, image) {
   const issues = [];
+  const headline = p.game.tagline?.trim() || "";
+  const synopsis = p.game.description?.trim() || "";
+  const highlights = backCopyLines(p.game.includedContent);
+  if (headline.length > BACK_CONTENT_LIMITS.headline)
+    issues.push(
+      `Back headline is too long (${BACK_CONTENT_LIMITS.headline} characters max).`,
+    );
+  if (synopsis.length > BACK_CONTENT_LIMITS.synopsis)
+    issues.push(
+      `Back synopsis is too long (${BACK_CONTENT_LIMITS.synopsis} characters max).`,
+    );
+  if (highlights.length > BACK_CONTENT_LIMITS.highlightCount)
+    issues.push(
+      `Back highlights are limited to ${BACK_CONTENT_LIMITS.highlightCount} lines.`,
+    );
+  if (highlights.some((line) => line.length > BACK_CONTENT_LIMITS.highlight))
+    issues.push(
+      `Back highlight lines are limited to ${BACK_CONTENT_LIMITS.highlight} characters each.`,
+    );
   if (
     ["title", "gameId", "developer", "publisher"].some(
       (k) => !p.game[k].trim(),

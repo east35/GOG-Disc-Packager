@@ -1,5 +1,3 @@
-import QRCode from "qrcode";
-
 // Figma uses its own print coordinate system. Keep these source coordinates;
 // converting them to physical dimensions requires a calibrated print check.
 export const TEMPLATE = {
@@ -21,34 +19,48 @@ export function geometry(spine) {
     trimWidth: wide ? 782 : 772,
   };
 }
-export const BRANDS = {
-  "rebel-wolves": "Rebel Wolves",
-  cdpr: "CD Projekt RED",
-  "bandai-namco": "Bandai Namco",
-  wb: "Warner Bros.",
-  eidos: "Eidos",
-  square: "Square",
-  "square-enix": "Square Enix",
-  capcom: "Capcom",
-  arkane: "Arkane",
-  "ion-storm": "Ion Storm",
-  bethesda: "Bethesda",
-  devolver: "Devolver",
-  topware: "TopWare",
-  unreal: "Unreal Engine",
-  redengine: "REDengine",
-  ubisoft: "Ubisoft",
-};
 export const ART_SLOTS = {
   front: "Front cover",
   back: "Back cover",
   fullWrap: "Full-wrap artwork",
-  spineLogo: "Title / spine logo",
+  spineLogo: "Game logo",
   disc: "Disc artwork",
   screenshot0: "Screenshot 1",
   screenshot1: "Screenshot 2",
   screenshot2: "Screenshot 3",
 };
+export const BACK_CONTENT_LIMITS = Object.freeze({
+  headline: 68,
+  synopsis: 420,
+  highlightCount: 4,
+  highlight: 34,
+  copyright: 180,
+});
+export function backCopyLines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^\s*(?:[-•*]|\d+[.)])\s*/, "")
+        .trim(),
+    )
+    .filter(Boolean);
+}
+const BACK_FEATURE_LABELS = [
+  ["single-player", "Single-player campaign"],
+  ["multiplayer", "Online multiplayer"],
+  ["cloud-saves", "Cloud saves"],
+  ["achievements", "Achievements"],
+  ["controller", "Controller support"],
+  ["offline-installer", "DRM-free offline installer"],
+];
+export function backHighlights(g) {
+  const custom = backCopyLines(g.includedContent);
+  if (custom.length) return custom.slice(0, BACK_CONTENT_LIMITS.highlightCount);
+  return BACK_FEATURE_LABELS.filter(([key]) => g.features?.includes(key))
+    .map(([, label]) => label)
+    .slice(0, BACK_CONTENT_LIMITS.highlightCount);
+}
 export function assetRef(project, slot) {
   return slot.startsWith("screenshot")
     ? project.game.artwork.screenshots?.[Number(slot.at(-1))]
@@ -74,8 +86,8 @@ export function ratingAsset(rating) {
     }[rating.value?.trim().toLowerCase()] || null
   );
 }
-export function cropRect(iw, ih, w, h, f = { x: 0.5, y: 0.5 }) {
-  const scale = Math.max(w / iw, h / ih),
+export function cropRect(iw, ih, w, h, f = { x: 0.5, y: 0.5 }, zoom = 1) {
+  const scale = Math.max(w / iw, h / ih) * zoom,
     sw = w / scale,
     sh = h / scale;
   return {
@@ -85,18 +97,56 @@ export function cropRect(iw, ih, w, h, f = { x: 0.5, y: 0.5 }) {
     height: sh,
   };
 }
-export function qrPayload(game) {
-  try {
-    const u = new URL(game.archive.url);
-    return ["https:", "http:"].includes(u.protocol) ? u.href : null;
-  } catch {
-    return null;
-  }
+export function shouldUseGameLogo(project, images, surface) {
+  return (
+    !!images.spineLogo &&
+    (surface !== "spine" || project.game.artwork.spineTitleMode !== "text")
+  );
+}
+export function frontLogoFrame(
+  asset,
+  frame = { x: 22, y: 76, width: 322, height: 102 },
+  panel = { width: 366, height: 456 },
+) {
+  const scale = asset?.scale ?? 1,
+    width = frame.width * scale,
+    height = frame.height * scale,
+    focal = asset?.focalPoint ?? { x: 0.5, y: 0.5 },
+    margin = 8,
+    baseX = frame.x + frame.width / 2,
+    baseY = frame.y + frame.height / 2,
+    xRange =
+      width > panel.width - margin * 2
+        ? [panel.width / 2, panel.width / 2]
+        : [margin + width / 2, panel.width - margin - width / 2],
+    yRange =
+      height > panel.height - margin * 2
+        ? [panel.height / 2, panel.height / 2]
+        : [margin + height / 2, panel.height - margin - height / 2],
+    [minX, maxX] = xRange,
+    [minY, maxY] = yRange,
+    centeredX = Math.max(minX, Math.min(maxX, baseX)),
+    centeredY = Math.max(minY, Math.min(maxY, baseY)),
+    position = (value, min, center, max) =>
+      value <= 0.5
+        ? min + (center - min) * value * 2
+        : center + (max - center) * (value - 0.5) * 2,
+    centerX = position(focal.x, minX, centeredX, maxX),
+    centerY = position(focal.y, minY, centeredY, maxY);
+  return {
+    x: centerX - width / 2,
+    y: centerY - height / 2,
+    width,
+    height,
+  };
 }
 export const ARCHIVE_COPY =
-  "Feature availability varies by title, storefront build, and system configuration. This is a personal archival edition of DRM-free software obtained from GOG.com, not an official retail product. Not for sale, rental, public performance, broadcast, or redistribution. All trademarks, logos, artwork, and screenshots belong to their respective owners and identify the archived title. Software remains subject to the license and terms accepted at purchase; this insert grants no additional rights. Online features and downloadable content may require an internet connection and a separate account. Later patches and add-ons must be obtained from the original storefront. Supplied as-is without warranty. Optical media degrades: store away from heat, humidity, and direct sunlight, and verify periodically.";
+  "Feature availability varies by title, storefront build, and system configuration. This disc is a personal archival backup of DRM-free software obtained from GOG.com and is not an official retail product. It is not licensed for sale, rental, public performance, broadcast, or redistribution. All trademarks, logos, cover artwork, and screenshots are the property of their respective owners and appear here solely to identify the archived title. The software written to this disc remains subject to the End User License Agreement and terms of service accepted at the time of purchase; nothing on this insert grants any additional rights. Online features, multiplayer services, and downloadable content, where offered, are not contained on this disc and may require an active internet connection and a separate account. Installers were captured on the archive date printed below — later patches, hotfixes, and add-on content must be downloaded from the original storefront. Contents were verified against the publisher's checksums at the time of writing and are supplied as-is, without warranty of any kind. Optical media degrades: store away from heat, humidity, and direct sunlight, and re-verify periodically.";
 const WARNING =
   "IF YOU HAVE A HISTORY OF EPILEPSY OR SEIZURES, CONSULT A DOCTOR BEFORE USE. CERTAIN PATTERNS MAY TRIGGER SEIZURES WITH NO PRIOR HISTORY. BEFORE USING AND FOR MORE DETAILS SEE INSTRUCTIONS FOR THIS PRODUCT.";
+const HOLDER = "GOG sp. z o.o.";
+const HOLDER_ADDRESS =
+  "ul. Jagiellońska 74 03-301. Warszawa (Warsaw), Poland";
 
 export function createRenderer(templateAssets) {
   const issues = new Set();
@@ -119,7 +169,7 @@ export function createRenderer(templateAssets) {
     y,
     w,
     h,
-    { contain = false, focal, flip = false } = {},
+    { contain = false, focal, flip = false, zoom = 1 } = {},
   ) {
     if (!img) return;
     ctx.save();
@@ -137,7 +187,7 @@ export function createRenderer(templateAssets) {
         img.height * s,
       );
     } else {
-      const r = cropRect(img.width, img.height, w, h, focal);
+      const r = cropRect(img.width, img.height, w, h, focal, zoom);
       ctx.drawImage(img, r.x, r.y, r.width, r.height, x, y, w, h);
     }
     ctx.restore();
@@ -220,9 +270,6 @@ export function createRenderer(templateAssets) {
     grad.addColorStop(0.7354, "#601eca");
     rect(ctx, x, y, w, h, grad);
   }
-  function brand(ctx, name, x, y, w, h) {
-    icon(ctx, name, x, y, w, h, name === "cd");
-  }
   function rating(ctx, g, x, y, w, h, full = false) {
     const key = ratingAsset(g.rating);
     if (key) {
@@ -262,39 +309,7 @@ export function createRenderer(templateAssets) {
       .filter(Boolean)
       .join(" / ") + ".";
   const archive = (g) =>
-    `GOG and the GOG logo are trademarks of GOG sp. z o.o. Archived${g.archive.archivist ? " by " + g.archive.archivist : ""}, ${g.archive.date}. Not for resale.`;
-  function qr(ctx, g, x, y) {
-    if (g.gameId) {
-      rect(ctx, x, y, 31, 12.5, "#000");
-      copy(ctx, g.gameId, x + 1, y + 4, 29, 7, 4.4, {
-        weight: 700,
-        align: "center",
-        color: "#fff",
-        name: "Game ID",
-      });
-    }
-    const payload = qrPayload(g);
-    if (!payload) return;
-    try {
-      const matrix = QRCode.create(payload, {
-        errorCorrectionLevel: "M",
-      }).modules;
-      rect(ctx, x, y + 12.5, 31, 32, "#fff");
-      const unit = 30 / (matrix.size + 8);
-      ctx.fillStyle = "#000";
-      for (let row = 0; row < matrix.size; row++)
-        for (let col = 0; col < matrix.size; col++)
-          if (matrix.get(row, col))
-            ctx.fillRect(
-              x + 0.5 + (col + 4) * unit,
-              y + 13.5 + (row + 4) * unit,
-              unit,
-              unit,
-            );
-    } catch {
-      issues.add("The archive URL is too long for a QR code.");
-    }
-  }
+    `GOG and the GOG logo are trademarks of GOG sp. z o.o. Archived by ${g.archive.archivist || "the archivist"}, ${g.archive.date}. Not for resale.`;
   function featureBadges(ctx, p) {
     const g = p.game;
     const items = [];
@@ -333,63 +348,57 @@ export function createRenderer(templateAssets) {
   }
   function rearLegal(ctx, p) {
     const g = p.game;
-    rect(ctx, 0, 0, 366, 152, "#fff");
+    rect(ctx, 0, 0, 366, 137, "#fff");
     featureBadges(ctx, p);
-    icon(ctx, "gog-black", 8, 27, 19, 18);
-    let x = 35;
-    for (const name of g.brandLogos || []) {
-      brand(ctx, name, x, 26, 48, 20);
-      x += 56;
-    }
-    brand(ctx, p.media.type, 315, 26, 43, 20);
-    copy(ctx, ARCHIVE_COPY, 8, 51, 350, 34, 4, {
+    icon(ctx, p.media.type, 315, 5, 43, 19, p.media.type === "cd");
+    copy(ctx, ARCHIVE_COPY, 8, 32, 350, 37, 4, {
       leading: 1.15,
       name: "Archive notice",
     });
-    copy(ctx, copyright(g) + " " + archive(g), 8, 87, 350, 11, 4, {
+    copy(ctx, copyright(g) + " " + archive(g), 8, 73, 350, 9, 3.6, {
       name: "Copyright / archive",
     });
-    rating(ctx, g, 8, 100, 85, 44, true);
-    rect(ctx, 97, 100, 121, 13, "#000");
-    copy(ctx, g.publisher || "PERSONAL ARCHIVE", 99, 102, 117, 9, 3.6, {
+    rating(ctx, g, 8, 86, 85, 44, true);
+    rect(ctx, 95, 86, 121, 13, "#000");
+    copy(ctx, HOLDER + "\n" + HOLDER_ADDRESS, 97, 87, 117, 10, 3.2, {
       color: "#fff",
       align: "center",
       weight: 700,
-      name: "Publisher",
+      leading: 1.1,
+      name: "GOG rights holder",
     });
-    rect(ctx, 97, 115, 121, 8, "#e01b1b");
-    icon(ctx, "warning-icon", 98, 116, 6, 6);
-    icon(ctx, "warning-word", 106, 117, 29.77, 4.63);
+    rect(ctx, 95, 101, 121, 8, "#e01b1b");
+    icon(ctx, "warning-icon", 96, 102, 6, 6);
+    icon(ctx, "warning-word", 104, 103, 29.77, 4.63);
     ctx.strokeStyle = "#e01b1b";
     ctx.lineWidth = 0.5;
-    ctx.strokeRect(97, 115, 121, 29);
-    copy(ctx, WARNING, 99, 125, 117, 17, 3.4, {
+    ctx.strokeRect(95, 101, 121, 29);
+    copy(ctx, WARNING, 97, 111, 117, 17, 3.4, {
       color: "#c31a1a",
       leading: 1.15,
       name: "Template warning",
     });
-    rect(ctx, 222, 100, 101, 12.5, "#000");
-    copy(ctx, "RECOMMENDED PC SETTINGS", 224, 104, 97, 7, 4.4, {
+    rect(ctx, 218, 86, 140, 12.5, "#000");
+    copy(ctx, "RECOMMENDED PC SETTINGS", 220, 90, 136, 7, 4.4, {
       color: "#fff",
       weight: 700,
       align: "center",
     });
     ctx.strokeStyle = "#000";
-    ctx.strokeRect(222, 112.5, 101, 31.5);
+    ctx.strokeRect(218, 98.5, 140, 31.5);
     const req = g.requirements || {};
     copy(
       ctx,
       ["os", "cpu", "ram", "gpu"]
         .map((k) => `${k.toUpperCase()}: ${req[k] || "—"}`)
         .join("\n"),
-      224,
-      115,
-      97,
+      220,
+      101,
+      136,
       27,
       4,
       { leading: 1.3, name: "PC requirements" },
     );
-    qr(ctx, g, 327, 100);
   }
   function keyBack(ctx) {
     rect(ctx, 0, 202, 366, 102, "#fff");
@@ -439,43 +448,81 @@ export function createRenderer(templateAssets) {
   function backContent(ctx, p, images) {
     const g = p.game,
       key = p.case.content === "key-media",
-      height = key ? 202 : 304;
-    const hasText = g.tagline || g.description || g.includedContent;
+      height = key ? 202 : 304,
+      screenshots = [0, 1, 2].filter((i) => images["screenshot" + i]),
+      customHighlights = backCopyLines(g.includedContent),
+      highlights = backHighlights(g),
+      railHighlights = highlights.slice(0, key ? 2 : 4),
+      hasRail = railHighlights.length > 0,
+      headline = g.tagline?.trim() || g.title || "YOUR GAME TITLE",
+      hasText = headline || g.description || highlights.length || screenshots.length;
     if (hasText) {
       const grad = ctx.createLinearGradient(0, 0, 0, height);
       grad.addColorStop(0, "#000b");
       grad.addColorStop(1, "#0003");
       rect(ctx, 0, 0, 366, height, grad);
     }
-    copy(ctx, g.tagline, 18, 20, 330, 21, 14, {
+    copy(ctx, headline, 18, 18, 330, 27, 14, {
       color: "#fff",
       weight: 700,
       family: "Barlow Condensed, Arial Narrow, sans-serif",
+      min: 12,
       name: "Back headline",
     });
-    const screenshots = [0, 1, 2].filter((i) => images["screenshot" + i]);
-    const textHeight = screenshots.length ? (key ? 87 : 164) : height - 58;
+    const textHeight = screenshots.length
+      ? key
+        ? 78
+        : 160
+      : height - 58;
     copy(
       ctx,
       g.description,
       18,
-      46,
-      g.includedContent ? 168 : 330,
+      50,
+      hasRail ? 168 : 330,
       textHeight,
       8,
       { color: "#fff", min: 7.5, name: "Back description" },
     );
-    if (g.includedContent)
+    if (hasRail) {
+      const railX = 202,
+        railY = 50,
+        railW = 147,
+        railH = screenshots.length ? (key ? 76 : 160) : height - 58;
+      rect(ctx, railX, railY, railW, railH, "#000b");
+      ctx.strokeStyle = "#ffffff55";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(railX, railY, railW, railH);
       copy(
         ctx,
-        "INCLUDED CONTENT\n\n" + g.includedContent,
-        202,
-        46,
-        147,
-        textHeight,
-        8,
-        { color: "#fff", min: 7.5, name: "Included content" },
+        customHighlights.length ? "INCLUDES" : "FEATURES",
+        railX + 10,
+        railY + 9,
+        railW - 20,
+        10,
+        6.5,
+        {
+          color: "#fff",
+          weight: 700,
+          family: "Barlow Condensed, Arial Narrow, sans-serif",
+          name: "Back highlights heading",
+        },
       );
+      const itemStep = key ? 25 : 29;
+      railHighlights.forEach((item, index) => {
+        const itemY = railY + 27 + index * itemStep;
+        ctx.fillStyle = "#d3b5ff";
+        ctx.beginPath();
+        ctx.arc(railX + 12, itemY + 4, 2, 0, Math.PI * 2);
+        ctx.fill();
+        copy(ctx, item, railX + 19, itemY, railW - 27, 20, 6.7, {
+          color: "#fff",
+          min: 6,
+          leading: 1.1,
+          name: "Back feature callout",
+        });
+      });
+    }
     screenshots.forEach((i, index) => {
       const w = (350 - (screenshots.length - 1) * 7) / screenshots.length,
         x = 8 + index * (w + 7),
@@ -490,14 +537,30 @@ export function createRenderer(templateAssets) {
     });
     if (key) keyBack(ctx);
     ctx.save();
-    ctx.translate(0, 304);
+    ctx.translate(0, 319);
     rearLegal(ctx, p);
     ctx.restore();
   }
-  function title(ctx, p, images, x, y, w, h, front = false) {
+  function title(ctx, p, images, x, y, w, h, surface = "disc") {
+    const front = surface === "front";
     if (front && p.game.artwork.front?.includesTitle) return;
-    if (images.spineLogo) {
-      image(ctx, images.spineLogo, x, y, w, h, { contain: true });
+    if (shouldUseGameLogo(p, images, surface)) {
+      if (front) {
+        const frame = frontLogoFrame(p.game.artwork.spineLogo, {
+          x,
+          y,
+          width: w,
+          height: h,
+        });
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, 366, 456);
+        ctx.clip();
+        image(ctx, images.spineLogo, frame.x, frame.y, frame.width, frame.height, {
+          contain: true,
+        });
+        ctx.restore();
+      } else image(ctx, images.spineLogo, x, y, w, h, { contain: true });
       return;
     }
     copy(ctx, p.game.title || "YOUR GAME TITLE", x, y, w, h, front ? 36 : 20, {
@@ -518,6 +581,7 @@ export function createRenderer(templateAssets) {
     if (images.fullWrap)
       image(ctx, images.fullWrap, geo.backX, 24, geo.trimWidth, 456, {
         focal: g.artwork.fullWrap?.focalPoint,
+        zoom: g.artwork.fullWrap?.scale,
       });
     for (const [slot, x] of [
       ["back", geo.backX],
@@ -526,10 +590,12 @@ export function createRenderer(templateAssets) {
       if (images[slot])
         image(ctx, images[slot], x, 24, 366, 456, {
           focal: g.artwork[slot]?.focalPoint,
+          zoom: g.artwork[slot]?.scale,
         });
       else if (!images.fullWrap && images.front)
         image(ctx, images.front, x, 24, 366, 456, {
           focal: g.artwork.front?.focalPoint,
+          zoom: g.artwork.front?.scale,
         });
     }
     ctx.save();
@@ -538,7 +604,7 @@ export function createRenderer(templateAssets) {
     ctx.restore();
     ctx.save();
     ctx.translate(geo.frontX, 24);
-    title(ctx, p, images, 22, 76, 322, 102, true);
+    title(ctx, p, images, 22, 76, 322, 102, "front");
     rating(ctx, g, 8, 379, 46, 65);
     if (p.media.discCount > 1) {
       rect(ctx, 58, 422, 83, 18, "#fff");
@@ -561,6 +627,7 @@ export function createRenderer(templateAssets) {
       -(geo.spineWidth - 8) / 2,
       342,
       geo.spineWidth - 8,
+      "spine",
     );
     ctx.restore();
     copy(ctx, g.gameId, geo.spineX + 2, 471, geo.spineWidth - 4, 7, 5, {
@@ -644,22 +711,14 @@ export function createRenderer(templateAssets) {
     const slot = images.disc ? "disc" : images.front ? "front" : "fullWrap";
     image(ctx, images[slot], 0, 0, d, d, {
       focal: g.artwork[slot]?.focalPoint,
+      zoom: g.artwork[slot]?.scale,
     });
-    title(ctx, p, images, 67, 29, 204, 60, false);
+    title(ctx, p, images, 67, 29, 204, 60, "disc");
     rating(ctx, g, 33, 109, 46, 65);
     rect(ctx, 46, 179, 22, 22, "#ffffffdd");
     icon(ctx, "gog-black", 48, 181, 19, 18);
-    if (g.brandLogos?.[0]) {
-      rect(ctx, 29, 206, 54, 23, "#ffffffdd");
-      brand(ctx, g.brandLogos[0], 31, 208, 50, 19);
-    }
-    qr(ctx, g, 267, 109);
     rect(ctx, 257, 161, 50, 24, "#ffffffdd");
-    brand(ctx, p.media.type, 259, 163, 46, 20);
-    if (g.brandLogos?.[1]) {
-      rect(ctx, 257, 191, 50, 23, "#ffffffdd");
-      brand(ctx, g.brandLogos[1], 259, 193, 46, 19);
-    }
+    icon(ctx, p.media.type, 259, 163, 46, 20, p.media.type === "cd");
     const cd = p.media.type === "cd";
     const legalY = cd ? 236 : 219,
       legalWidth = cd ? 236 : 168;

@@ -6,6 +6,7 @@ import {
   syncLabels,
   projectChecks,
 } from "./model.js";
+import { BACK_CONTENT_LIMITS } from "./template.js";
 test("project round trip preserves embedded art and focal point", () => {
   const p = newProject();
   p.game.artwork.front = {
@@ -47,10 +48,35 @@ test("disc count maintains numbered labels and detects incompatible cases", () =
   assert.equal(p.media.labels.length, 1);
   assert.ok(!projectChecks(p, null).some((s) => s.includes("two discs")));
 });
+test("back-cover copy budgets are surfaced before print", () => {
+  const p = newProject();
+  p.game.tagline = "x".repeat(BACK_CONTENT_LIMITS.headline + 1);
+  p.game.description = "x".repeat(BACK_CONTENT_LIMITS.synopsis + 1);
+  p.game.includedContent = Array.from(
+    { length: BACK_CONTENT_LIMITS.highlightCount + 1 },
+    () => "x".repeat(BACK_CONTENT_LIMITS.highlight + 1),
+  ).join("\n");
+  const issues = projectChecks(p, null);
+  assert.ok(issues.some((s) => s.includes("Back headline")));
+  assert.ok(issues.some((s) => s.includes("Back synopsis")));
+  assert.ok(issues.some((s) => s.includes("Back highlights are limited")));
+  assert.ok(issues.some((s) => s.includes("Back highlight lines")));
+});
 test("low resolution and missing artwork approval are reported", () => {
   const p = newProject();
   p.game.artwork.front = { approved: false };
   const issues = projectChecks(p, { width: 300, height: 400 });
   assert.ok(issues.some((s) => s.includes("DPI")));
   assert.ok(issues.some((s) => s.includes("Approve")));
+});
+test("spine title mode defaults for older projects and rejects unknown modes", () => {
+  const older = newProject();
+  delete older.game.artwork.spineTitleMode;
+  assert.equal(
+    parseProject(JSON.stringify(older)).game.artwork.spineTitleMode,
+    "logo",
+  );
+  const invalid = newProject();
+  invalid.game.artwork.spineTitleMode = "stretched";
+  assert.throws(() => parseProject(JSON.stringify(invalid)));
 });

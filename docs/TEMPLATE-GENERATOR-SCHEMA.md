@@ -30,7 +30,8 @@ type GameTemplateData = {
   artwork: {
     front: AssetRef
     back?: AssetRef
-    spineLogo?: AssetRef
+    spineLogo?: AssetRef // transparent PNG game logo, reused on front/spine/discs
+    spineTitleMode?: "logo" | "text"
     disc?: AssetRef
     screenshots?: AssetRef[]
   }
@@ -48,12 +49,11 @@ type GameTemplateData = {
   archive: {
     date: string
     archivist?: string
-    url?: string
   }
 }
 ```
 
-`AssetRef` should store the source, source ID, embedded uploaded image data, crop focal point, attribution, and an optional `sourcePageUrl`. Users browse SteamGridDB in a separate tab, download their chosen artwork, then upload and approve it in the generator. External image URLs are not required to reopen a saved project.
+`AssetRef` should store the source, source ID, embedded uploaded image data, crop focal point, attribution, and an optional `sourcePageUrl`. Main case and disc artwork may store a `scale` from `1` to `2` for crop zoom. The game-logo asset uses `0.4` to `1.6`; its focal point positions the logo on the front panel. Users browse SteamGridDB in a separate tab, download their chosen artwork, then upload and approve it in the generator. External image URLs are not required to reopen a saved project.
 
 The accepted [hosting and artwork architecture decision](TEMPLATE-GENERATOR-ARCHITECTURE.md) uses GitHub Pages and browser-side processing, without a SteamGridDB API key or backend integration.
 
@@ -93,7 +93,7 @@ Generator-facing layers use stable semantic names:
 - `Panel / Back`, `Panel / Front`, `Panel / Spine`
 - `Content / Back Metadata`, `Content / Disc Legal`
 - `Metadata / Rating`, `Metadata / Disc Count`, `Metadata / Game ID`
-- `Metadata / Rating and Logos`
+- `Metadata / Rating and Media`
 - `Branding / Header`, `Branding / Footer`
 - `Guides / Crop Marks`, `Guides / Disc Safe Area`, `Guides / Spindle Hole`
 
@@ -102,8 +102,10 @@ Variant properties use `Spine=14mm|17mm`, `Full Game=Yes|No`, and `Medium=DVD|Bl
 ## Guardrails
 
 - Crop artwork automatically from a saved focal point and preview every panel.
-- Keep legal copy, rating marks, logos, crop marks, bleed, and safe areas locked to the template.
+- Keep legal copy, rating marks, fixed template marks, crop marks, bleed, and safe areas locked to the template.
 - Offer a small set of curated treatments instead of freeform typography and positioning.
+- Compose the back cover from fixed editorial slots: a two-line hook, a short synopsis, up to four highlight lines, and a fixed screenshot strip. Fall back to selected game features when highlight copy is omitted.
+- Enforce copy budgets before print: 68 characters for the hook, 420 for the synopsis, and 34 per highlight line.
 - Flag low-resolution artwork and overflow before export.
 - Export print-ready PDF plus optional 4x PNG assets; omit guides from final output.
 - Save a JSON project beside exported files so a package can be regenerated later.
@@ -113,7 +115,7 @@ Variant properties use `Spine=14mm|17mm`, `Full Game=Yes|No`, and `Medium=DVD|Bl
 1. Enter a game title and its metadata.
 2. Choose case format, media type, and disc count.
 3. Optionally save a SteamGridDB game/gallery URL and open it in a new tab to find cover art.
-4. Let the user upload their downloaded front art, adjust one focal point, and approve the selection.
+4. Let the user upload their downloaded front art and optional transparent PNG game logo, adjust focal points, and approve each selection. Keep the back legal content on fixed template assets and copy.
 5. Generate the 14 mm full-game cover and matching Blu-ray labels.
 6. Validate bleed, safe areas, image resolution, and text overflow.
 7. Export a print-ready PDF and project JSON.

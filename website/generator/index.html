@@ -4,14 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Template generator · GOG Disc Packager</title>
-    <link rel="icon" href="../favicon.svg" />
+    <link rel="icon" data-static-asset="favicon.svg" />
     <link rel="stylesheet" href="../style.css" />
-    <link rel="stylesheet" href="/generator/generator.css" />
+    <link rel="stylesheet" href="./generator.css" />
   </head>
   <body>
     <header>
       <a class="brand" href="../"
-        ><img class="brand-icon" src="../AppIcon.ico" alt="" /><span
+        ><img
+          class="brand-icon"
+          data-static-asset="AppIcon.ico"
+          alt=""
+        /><span
           >GOG <b>Disc Packager</b></span
         ></a
       >
@@ -101,18 +105,20 @@
             <h2><span>03</span> Artwork</h2>
             <label>Artwork panel<select id="art-slot"></select></label
             ><label class="upload"
-              >Choose artwork<input
+              ><strong id="art-upload-label">Choose artwork</strong><input
                 id="art"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
-              /><span>PNG, JPG or WebP · up to 15 MB</span></label
+              /><span id="art-upload-help"
+                >PNG, JPG or WebP · up to 15 MB</span
+              ></label
             >
             <p id="art-info" class="muted">
               Add artwork to see your cover take shape.
             </p>
             <div class="pair">
               <label
-                >Focal point · horizontal<input
+                ><span id="art-x-label">Focal point · horizontal</span><input
                   name="focal.x"
                   type="range"
                   min="0"
@@ -120,7 +126,7 @@
                   step="0.01"
                   value="0.5" /></label
               ><label
-                >Vertical<input
+                ><span id="art-y-label">Vertical</span><input
                   name="focal.y"
                   type="range"
                   min="0"
@@ -129,6 +135,16 @@
                   value="0.5"
               /></label>
             </div>
+            <label id="art-scale-control" hidden
+              ><span><span id="art-scale-label">Image size</span> · <output id="art-scale-value">100%</output></span
+              ><input
+                name="asset.scale"
+                type="range"
+                min="1"
+                max="2"
+                step="0.01"
+                value="1"
+            /></label>
             <label class="check"
               ><input id="approved" type="checkbox" /> I approve this artwork
               for my edition</label
@@ -140,44 +156,121 @@
               ><input id="includes-title" type="checkbox" /> Front artwork
               already includes the game title</label
             >
+            <label
+              >Spine title<select name="game.artwork.spineTitleMode">
+                <option value="logo">Game logo (title text fallback)</option>
+                <option value="text">Title text</option>
+              </select></label
+            >
             <p class="muted">
-              A title logo is fitted to the front, spine and disc. Full-wrap
-              artwork spans all three panels; separate front and back images
-              override it.
+              Upload a transparent PNG in the Game logo slot to reuse it on the
+              front, rotated on the spine, and on disc labels. Full-wrap artwork
+              spans all three panels; separate front and back images override
+              it.
             </p>
           </section>
-          <details>
-            <summary>Back cover content & logos</summary>
+          <details open>
+            <summary>Back cover composition</summary>
+            <div class="back-copy-note">
+              <strong>Fixed editorial blueprint</strong>
+              <span
+                >Headline → synopsis → feature rail → screenshot strip. The
+                template owns the spacing, type scale, and safe areas.</span
+              >
+            </div>
+            <div class="back-blueprint" aria-label="Back cover structure">
+              <div class="back-blueprint-slot back-blueprint-headline">
+                <span>01</span><b>Hook</b><small>2 lines</small>
+              </div>
+              <div class="back-blueprint-slot back-blueprint-synopsis">
+                <span>02</span><b>Synopsis</b><small>short paragraph</small>
+              </div>
+              <div class="back-blueprint-slot back-blueprint-features">
+                <span>03</span><b>Highlights</b><small>4 max</small>
+              </div>
+              <div class="back-blueprint-slot back-blueprint-screenshots">
+                <span>04</span><b>Screenshot strip</b><small>up to 3</small>
+              </div>
+            </div>
             <label
-              >Back headline<input name="game.tagline" maxlength="160"
-            /></label>
+              >Back headline<input
+                id="back-headline"
+                name="game.tagline"
+                maxlength="68"
+                placeholder="e.g. A city with a secret to keep"
+              /><small class="field-note"
+                ><span data-count-for="back-headline">0</span>/68 characters ·
+                2 lines max</small
+              ></label
+            >
             <label
-              >Game description<textarea
+              >Back synopsis<textarea
+                id="back-synopsis"
                 name="game.description"
-                rows="6"
-                maxlength="3000"
-              ></textarea>
-            </label>
-            <label
-              >Included content<textarea
-                name="game.includedContent"
-                rows="4"
-                maxlength="1500"
-                placeholder="One item per line"
-              ></textarea>
-            </label>
-            <div id="brand-fields" class="pair"></div>
-            <p class="muted">
-              Choose only the logos credited to this edition. These are the
-              original marks from your Figma library.
-            </p>
+                rows="5"
+                maxlength="420"
+                placeholder="One tight paragraph: who you are, what is at stake, and what makes this edition worth keeping."
+              ></textarea
+              ><small class="field-note"
+                ><span data-count-for="back-synopsis">0</span>/420 characters ·
+                one paragraph</small
+              ></label
+            >
+            <fieldset class="back-highlights">
+              <legend>Feature / edition highlights</legend>
+              <p class="field-help">
+                Four short lines are typeset into a fixed rail. Leave them
+                blank to use the selected game features automatically.
+              </p>
+              <div id="back-highlights">
+                <label
+                  >Highlight 1<input
+                    id="back-highlight-0"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. Explore a living world"
+                  /></label
+                ><label
+                  >Highlight 2<input
+                    id="back-highlight-1"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. Shape your own story"
+                  /></label
+                ><label
+                  >Highlight 3<input
+                    id="back-highlight-2"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. Includes bonus content"
+                  /></label
+                ><label
+                  >Highlight 4<input
+                    id="back-highlight-3"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. DRM-free offline installer"
+                  /></label
+                >
+              </div>
+              <small class="field-note"
+                ><span id="back-highlight-count">0</span>/4 lines used · 34
+                characters per line</small
+              >
+            </fieldset>
             <label
               >Copyright notice (optional override)<textarea
+                id="back-copyright"
                 name="game.copyright"
-                rows="3"
-                maxlength="1200"
-              ></textarea>
-            </label>
+                rows="2"
+                maxlength="180"
+                placeholder="Leave blank to build this line from the game metadata."
+              ></textarea
+              ><small class="field-note"
+                ><span data-count-for="back-copyright">0</span>/180
+                characters</small
+              ></label
+            >
           </details>
           <details>
             <summary>Rating, features & archive</summary>
@@ -207,11 +300,6 @@
                   type="date" /></label
               ><label>Archivist<input name="game.archive.archivist" /></label>
             </div>
-            <label
-              >GOG / archive URL (QR code)<input
-                name="game.archive.url"
-                type="url"
-            /></label>
             <h3>System requirements</h3>
             <div id="requirements" class="pair"></div>
           </details>
@@ -241,7 +329,7 @@
                 <option value="2">200%</option>
               </select></label
             ><a
-              href="https://www.figma.com/design/CBR9nICUoNR4Km00Dc8Nui/GOG-Disc-Packager?node-id=1-431"
+              href="https://www.figma.com/design/CBR9nICUoNR4Km00Dc8Nui/GOG-Disc-Packager?node-id=187-1930"
               target="_blank"
               rel="noreferrer"
               >Figma template ↗</a
