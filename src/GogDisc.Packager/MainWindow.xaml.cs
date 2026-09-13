@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.ComponentModel;
 using GogDisc.Core;
 using Microsoft.Win32;
 
@@ -18,12 +19,17 @@ public partial class MainWindow : Window
     private GogCatalogProduct? _resolvedGame;
     private List<GogKeyProduct>? _validatedKeyDiscs;
     private readonly List<DlcOption> _dlcs = [];
+    private readonly List<InventoryOption> _mediaInventory = [];
+    private IReadOnlyList<OpticalMediaType>? _selectedInventoryMedia;
+    private readonly string _mediaInventoryPath = MediaInventoryStore.DefaultPath;
 
     public MainWindow()
     {
         InitializeComponent();
         OutputBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GOG Disc Packages");
         LauncherBox.Text = FindLauncher();
+        LoadMediaInventory();
+        SynchronizeMediaControls();
         UpdateAccountStatus();
     }
 
@@ -81,16 +87,51 @@ public partial class MainWindow : Window
 
     private void MediaBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        SynchronizeMediaControls();
+        ResetScan();
+    }
+
+    private void SynchronizeMediaControls()
+    {
         if (CustomCapacityBox is not null)
             CustomCapacityBox.Visibility = MediaBox.SelectedIndex == 9 ? Visibility.Visible : Visibility.Collapsed;
         if (CustomCapacityLabel is not null)
             CustomCapacityLabel.Visibility = MediaBox.SelectedIndex == 9 ? Visibility.Visible : Visibility.Collapsed;
         if (MixedMediaPanel is not null)
             MixedMediaPanel.Visibility = MediaBox.SelectedIndex == 8 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void LoadMediaInventory()
+    {
+        var saved = MediaInventoryStore.Load(_mediaInventoryPath).ToDictionary(item => item.Media.Id, item => item.Count);
+        foreach (var media in MediaCatalog.All)
+            _mediaInventory.Add(new InventoryOption(media, saved.GetValueOrDefault(media.Id)));
+        UpdateInventorySummary();
+    }
+
+    private void ManageInventory_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new MediaInventoryWindow(_mediaInventory) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        SetMediaInventory(dialog.Inventory);
+        SaveMediaInventory();
         ResetScan();
     }
 
-    private void MediaInventoryBox_TextChanged(object sender, TextChangedEventArgs e) => ResetScan();
+    private List<MediaInventoryItem> GetMediaInventory() => _mediaInventory
+        .Where(option => option.Count > 0)
+        .Select(option => new MediaInventoryItem(option.Media, option.Count))
+        .ToList();
+
+    private void UpdateInventorySummary()
+    {
+        if (InventorySummaryText is null) return;
+        var count = _mediaInventory.Sum(option => option.Count);
+        var usable = _mediaInventory.Sum(option => option.Count * option.Media.UsableBytes);
+        InventorySummaryText.Text = count == 0
+            ? "No blank discs recorded yet."
+            : $"{count} blank disc(s) · {FormatBytes(usable)} total usable capacity";
+    }
 
     private void GameLookupBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -240,7 +281,11 @@ public partial class MainWindow : Window
         ResetScan();
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanPackageAsync();
+    private async void Scan_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedInventoryMedia = null;
+        await ScanPackageAsync();
+    }
 
     private async Task<bool> ScanPackageAsync()
     {
@@ -280,11 +325,28 @@ public partial class MainWindow : Window
             string? economySuggestion = null;
             if (MediaBox.SelectedIndex == 8)
             {
-                var inventory = MediaCatalog.ParseInventory(MediaInventoryBox.Text);
-                var suggestion = MediaCatalog.Suggest(_family.InstallerBytes + _family.ExtrasBytes, inventory);
+                var inventory = GetMediaInventory();
+                if (inventory.Count == 0)
+                    throw new InvalidOperationException("Add at least one blank disc to your inventory.");
+                var suggestions = MediaCatalog.SuggestOptions(_family.InstallerBytes + _family.ExtrasBytes, inventory);
+                var cachedSuggestion = _selectedInventoryMedia is null ? null : suggestions.FirstOrDefault(option =>
+                    option.Discs.Select(disc => disc.Id).SequenceEqual(_selectedInventoryMedia.Select(disc => disc.Id)));
+                var suggestion = cachedSuggestion ?? suggestions[0];
+                if (cachedSuggestion is null && suggestions.Count > 1)
+                {
+                    var picker = new DiscPlanWindow(suggestions) { Owner = this };
+                    if (picker.ShowDialog() != true)
+                    {
+                        ResetScan();
+                        StatusText.Text = "Disc layout selection cancelled";
+                        return false;
+                    }
+                    suggestion = picker.SelectedSuggestion;
+                }
+                _selectedInventoryMedia = suggestion.Discs;
                 _plan = DiscPlanner.CreateMixed(_family, suggestion.Discs);
                 economySuggestion =
-                    $"Economy suggestion: {suggestion.Summary}\n" +
+                    $"Chosen inventory layout: {suggestion.Summary}\n" +
                     $"Combined usable space: {FormatBytes(suggestion.UsableBytes)}; unused: {FormatBytes(suggestion.UnusedBytes)}\n";
             }
             else
@@ -521,6 +583,7 @@ public partial class MainWindow : Window
         _plan = null;
         _collection = null;
         _validatedKeyDiscs = null;
+        _selectedInventoryMedia = null;
         if (BuildButton is not null) BuildButton.IsEnabled = false;
     }
 
@@ -541,10 +604,42 @@ public partial class MainWindow : Window
     {
         Log($"Complete: {result.PackageDirectory}");
         StatusText.Text = IsKeyMedia ? "Key Media folder built" : "Disc folders built and verified";
+        OfferInventoryDeduction();
         MessageBox.Show(this, $"Physical-media folder is ready:\n\n{result.PackageDirectory}", "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);
         if (OpenWhenCompleteBox.IsChecked == true)
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{result.PackageDirectory}\"") { UseShellExecute = true });
         if (ResetAfterBuildBox.IsChecked == true) ClearBackupInputs();
+    }
+
+    private void OfferInventoryDeduction()
+    {
+        if (_selectedInventoryMedia is null || _selectedInventoryMedia.Count == 0) return;
+        var used = _selectedInventoryMedia.GroupBy(media => media.Id)
+            .Select(group => $"{group.Count()} x {group.First().DisplayName}");
+        var message = "Remove these discs from your blank-media inventory?\n\n" + string.Join("\n", used) +
+                      "\n\nChoose No if you have only created the folders and have not committed these blanks yet.";
+        if (MessageBox.Show(this, message, "Update disc inventory", MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        SetMediaInventory(MediaInventoryStore.Consume(GetMediaInventory(), _selectedInventoryMedia));
+        SaveMediaInventory();
+        Log("Removed the selected blanks from disc inventory.");
+    }
+
+    private void SetMediaInventory(IEnumerable<MediaInventoryItem> inventory)
+    {
+        var counts = inventory.ToDictionary(item => item.Media.Id, item => item.Count);
+        foreach (var option in _mediaInventory) option.Count = counts.GetValueOrDefault(option.Media.Id);
+        UpdateInventorySummary();
+    }
+
+    private void SaveMediaInventory()
+    {
+        try { MediaInventoryStore.Save(_mediaInventoryPath, GetMediaInventory()); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowError("Your disc inventory could not be saved: " + ex.Message);
+        }
     }
 
     private void ClearBackupInputs()
@@ -706,4 +801,21 @@ public partial class MainWindow : Window
         StatusText.Text = "Error";
         MessageBox.Show(this, message, "GOG Disc Packager", MessageBoxButton.OK, MessageBoxImage.Error);
     }
+}
+
+public sealed class InventoryOption(OpticalMediaType media, int count) : INotifyPropertyChanged
+{
+    private int _count = count;
+    public OpticalMediaType Media { get; } = media;
+    public int Count
+    {
+        get => _count;
+        set
+        {
+            if (_count == value) return;
+            _count = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
+        }
+    }
+    public event PropertyChangedEventHandler? PropertyChanged;
 }

@@ -31,10 +31,12 @@ turning the installation into a reusable offline backup.
 
 1. Download and extract the [latest release](https://github.com/east35/GOG-Disc-Packager/releases/latest), then run `GOG Disc Packager.exe`.
 2. Choose **Offline installer media** and select the game's original GOG `setup_*.exe`. Matching `.bin` files are found automatically.
-3. Choose a disc type, a custom capacity, or **Mixed media** if you want the app to optimize a supply such as `BD50 x1, BD25 x10`.
+3. The media picker defaults to **Use my disc inventory**. Manage or clear saved blank-media quantities in a separate window, or choose a fixed disc type or custom capacity instead. After scanning, choose among valid layouts by disc count, case capacity, media combination, and unused space. Once a build succeeds, the app can deduct the selected blanks with your confirmation.
 4. Optionally add extras and custom background, cover, and icon artwork.
 5. Choose an output folder, select **Scan package**, review the proposed layout, then select **Build disc folders**.
 6. Burn the **contents** of each generated disc folder—not the folder itself—to its own disc or ISO. A single disc is named after the game; a set is named `Title - Disc 1`, `Title - Disc 2`, and so on.
+
+Blank-media inventory is user data stored under Local AppData, outside the installation and test-build folders, so application updates keep it intact.
 
 Use UDF 2.50 or later, give each disc a distinct label ending in its disc
 number, and enable verify-after-write. Mount and test ISOs before burning them.

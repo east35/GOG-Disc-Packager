@@ -61,6 +61,7 @@ await Run("Setup family scanning", TestSetupScanning);
 await Run("Offline collection package", TestOfflineCollection);
 await Run("Disc allocation", TestDiscAllocation);
 await Run("Mixed media economy", TestMixedMediaEconomy);
+await Run("Media inventory persistence", TestMediaInventoryPersistence);
 await Run("Package build and staging", TestBuildAndStage);
 await Run("Disc swap waits for the drive", TestDriveSettle);
 await Run("Path traversal rejection", TestPathSafety);
@@ -220,6 +221,18 @@ Task TestMixedMediaEconomy()
     Equal("BD50", suggestion.Discs[0].Id);
     Equal("BD25", suggestion.Discs[1].Id);
 
+    // Five smaller discs have less nominal capacity, but two burns are the more economical choice.
+    var dvdInventory = MediaCatalog.ParseInventory("DVD9 x2, DVD5 x1, CD700 x3");
+    var dvdSuggestion = MediaCatalog.Suggest(14_000_000_000L, dvdInventory);
+    Equal(2, dvdSuggestion.Discs.Count);
+    True(dvdSuggestion.Discs.All(disc => disc.Id == "DVD9"),
+        "The optimizer preferred five smaller discs over two DVD-9 discs.");
+    var dvdOptions = MediaCatalog.SuggestOptions(14_000_000_000L, dvdInventory);
+    True(dvdOptions.Any(option => option.Discs.Count == 5),
+        "The five-disc capacity-saving alternative was not offered to the user.");
+    Equal(2, dvdOptions.Single(option => option.Discs.Count == 2).SuggestedCaseCapacity);
+    Equal(6, dvdOptions.Single(option => option.Discs.Count == 5).SuggestedCaseCapacity);
+
     var family = new SetupFamily
     {
         SetupExecutable = "setup.exe",
@@ -238,6 +251,30 @@ Task TestMixedMediaEconomy()
     Equal("Big disc", plan.Discs[0].MediaName);
     Equal("Small disc", plan.Discs[1].MediaName);
     True(plan.Discs.SelectMany(disc => disc.Files).All(file => file.PartCount == 2), "Mixed-media file was not split across both discs.");
+    return Task.CompletedTask;
+}
+
+Task TestMediaInventoryPersistence()
+{
+    using var fixture = new TempFixture();
+    Equal(Path.Combine("profile", "GOG Disc Packager", "media-inventory.json"),
+        MediaInventoryStore.GetPath("profile"));
+    var path = Path.Combine(fixture.Root, "settings", "media-inventory.json");
+    MediaInventoryStore.Save(path,
+    [
+        new MediaInventoryItem(MediaCatalog.Dvd9, 3),
+        new MediaInventoryItem(MediaCatalog.Bd25, 7),
+        new MediaInventoryItem(MediaCatalog.Cd700, 0)
+    ]);
+    var loaded = MediaInventoryStore.Load(path);
+    Equal(2, loaded.Count);
+    Equal(3, loaded.Single(item => item.Media.Id == "DVD9").Count);
+    Equal(7, loaded.Single(item => item.Media.Id == "BD25").Count);
+    var remaining = MediaInventoryStore.Consume(loaded, [MediaCatalog.Dvd9, MediaCatalog.Bd25, MediaCatalog.Bd25]);
+    Equal(2, remaining.Single(item => item.Media.Id == "DVD9").Count);
+    Equal(5, remaining.Single(item => item.Media.Id == "BD25").Count);
+    File.WriteAllText(path, "not json");
+    Equal(0, MediaInventoryStore.Load(path).Count);
     return Task.CompletedTask;
 }
 

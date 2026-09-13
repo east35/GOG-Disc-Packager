@@ -1,0 +1,58 @@
+<Window x:Class="GogDisc.Packager.MediaInventoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Blank disc inventory" Width="460" Height="570" MinWidth="430" MinHeight="390" MaxHeight="720"
+        Background="#11151D" Foreground="White" WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize" ShowInTaskbar="False">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock Text="Blank discs on hand" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,6,0,14" Foreground="#AEB7C7" TextWrapping="Wrap"
+                       Text="Set the blanks currently available. This inventory is saved across sessions and used to calculate layout choices."/>
+        </StackPanel>
+        <ListBox Grid.Row="1" x:Name="InventoryList" Margin="0,0,0,8"
+                 Background="#202631" Foreground="White" BorderBrush="#465065" BorderThickness="1"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="5,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/><ColumnDefinition Width="44"/>
+                            <ColumnDefinition Width="50"/><ColumnDefinition Width="44"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Media.DisplayName}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="−" Width="32" Height="32" MinHeight="0"
+                                Margin="6,3" Padding="0" FontSize="20" Click="Decrease_Click" Tag="{Binding}"/>
+                        <TextBlock Grid.Column="2" Text="{Binding Count}" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" FontWeight="SemiBold"/>
+                        <Button Grid.Column="3" Content="+" Width="32" Height="32" MinHeight="0"
+                                Margin="6,3" Padding="0" FontSize="20" Click="Increase_Click" Tag="{Binding}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <StackPanel Grid.Row="2">
+            <TextBlock x:Name="SummaryText" Margin="0,4,0,0" Foreground="#AEB7C7"/>
+            <Grid Margin="0,18,0,0">
+                <Button Content="Clear inventory" Width="145" Height="44" Margin="0"
+                        HorizontalAlignment="Left" Background="#465065" Click="Clear_Click"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Cancel" Width="100" Height="44" Margin="0,0,8,0" IsCancel="True"/>
+                    <Button Content="Save" Width="100" Height="44" Margin="0" IsDefault="True" Click="Save_Click"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+    </Grid>
+</Window>
