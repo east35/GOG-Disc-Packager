@@ -13,6 +13,7 @@ import {
   createRenderer,
 } from "./template.js";
 import manifest from "./figma-assets.json";
+import { createPdf } from "./pdf.js";
 const $ = (s) => document.querySelector(s),
   form = $("#controls"),
   words = (s) => s.replaceAll("-", " "),
@@ -32,6 +33,7 @@ const SCALABLE_ART_SLOTS = new Set([
   "fullWrap",
   "spineLogo",
   "disc",
+  "interior",
 ]);
 let project = newProject(),
   images = {},
@@ -102,6 +104,7 @@ function updateBackCopyCounters() {
 function populate() {
   for (const el of form.elements) {
     if (!el.name) continue;
+    if (el.type === "checkbox") { el.checked = !!get(el.name); continue; }
     const activeAsset = assetRef(project, activeSlot);
     el.value = el.name.startsWith("focal.")
       ? (activeAsset?.focalPoint?.[el.name.at(-1)] ?? 0.5)
@@ -186,7 +189,7 @@ form.oninput = (e) => {
   else if (el.dataset.backItem !== undefined) syncBackHighlights();
   else if (el.name) {
     if (el.type === "number" && !el.validity.valid) return;
-    set(el.name, el.type === "number" ? Number(el.value) : el.value);
+    set(el.name, el.type === "checkbox" ? el.checked : ["number", "range"].includes(el.type) ? Number(el.value) : el.value);
     if (el.name === "media.discCount") {
       syncLabels(project);
       labels();
@@ -289,6 +292,10 @@ $("#art").onchange = async (e) => {
       img = await decode(url);
     if (t !== token) return;
     images[slot] = img;
+    if (slot === "interior") {
+      project.game.artwork.interiorMode = "artwork";
+      form.elements.namedItem("game.artwork.interiorMode").value = "artwork";
+    }
     setAssetRef(project, slot, {
       source: "upload",
       sourceId: file.name,
@@ -368,7 +375,24 @@ $("#save").onclick = () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   $("#status").textContent =
-    "Project saved with uploaded artwork. Reopen it to continue editing.";
+    "JSON saved with your artwork and work in progress. Upload this file using Open JSON to continue editing.";
+};
+$("#export-pdf").onclick = async () => {
+  const button = $("#export-pdf");
+  button.disabled = true;
+  $("#status").textContent = "Preparing PDF: cover, interior, and all disc labels…";
+  try {
+    await document.fonts.ready;
+    const blob = createPdf(renderer.exportPages(project, images));
+    const url = URL.createObjectURL(blob), link = document.createElement("a");
+    link.href = url;
+    link.download = `${project.game.title.replace(/[^a-z0-9]+/gi, "-") || "untitled"}-artwork.pdf`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    $("#status").textContent = "PDF exported without preview guides. Print at actual size and check a paper proof. Save JSON separately to keep editing your work in progress.";
+  } catch (error) {
+    $("#status").textContent = `PDF export failed: ${error.message}. Your project can still be saved as JSON.`;
+  } finally { button.disabled = false; render(); }
 };
 for (const b of document.querySelectorAll("[data-view]"))
   b.onclick = () => {
@@ -389,6 +413,7 @@ function render() {
 }
 function draw() {
   if (!renderer) return;
+  $("#preservation-controls").hidden = !project.game.preservation?.enabled;
   const result = renderer.render(project, images, {
     view,
     guides: $("#guides").checked,
@@ -399,7 +424,7 @@ function draw() {
   host.className =
     view === "disc"
       ? "discs"
-      : view === "wrap"
+      : ["wrap", "interior"].includes(view)
         ? ""
         : view === "spine"
           ? "spine"
@@ -428,6 +453,8 @@ function draw() {
     ...result.issues,
     ...assetErrors,
   ];
+  if (project.game.artwork.interiorMode === "artwork" && !images.interior)
+    problems.push("Upload case interior artwork. The generic fallback is currently shown.");
   if (!images.front && images.fullWrap) {
     const idx = problems.indexOf("Approve the selected artwork.");
     if (idx >= 0 && project.game.artwork.fullWrap?.approved)
@@ -448,7 +475,7 @@ function draw() {
   for (const message of problems.length
     ? [...new Set(problems)]
     : [
-        "Content checks passed. Print calibration and export are still pending.",
+        "Content checks passed. Check a paper proof before final printing.",
       ]) {
     const li = document.createElement("li");
     li.textContent = (problems.length ? "△ " : "✓ ") + message;
@@ -459,7 +486,12 @@ function draw() {
 }
 populate();
 Promise.all(
-  manifest.map(async (a) => {
+  [...manifest,
+    { name: "generic-interior", file: "generic-interior.png" },
+    { name: "disc-count-badge", file: "disc-count-badge.png" },
+    { name: "preservation-program", file: "preservation-program.png" },
+    ...["dvd", "cd", "blu-ray"].flatMap(name =>
+    ["black", "white"].map(color => ({ name: `${name}-${color}`, file: `${name}-${color}.png` })))].map(async (a) => {
     try {
       templateAssets[a.name] = await decode(
         templateAssetUrl(a.file),
@@ -471,6 +503,7 @@ Promise.all(
     }
   }),
 ).then(() => {
+  $("#export-pdf").disabled = false;
   renderer = createRenderer(templateAssets);
   render();
 });

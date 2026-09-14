@@ -16,12 +16,13 @@ export const mediaName = (v) =>
 export const newProject = () => ({
   game: {
     title: "",
+    preservation: { enabled: false, x: 1, y: 0, size: 56 },
     gameId: "",
     releaseYear: new Date().getFullYear(),
     developer: "",
     publisher: "",
     rating: { system: "none" },
-    artwork: { front: null, spineTitleMode: "logo" },
+    artwork: { front: null, spineTitleMode: "logo", spineBackground: "black", mediaMarkColor: "black", interiorMode: "generic" },
     features: ["single-player", "offline-installer"],
     archive: { date: new Date().toISOString().slice(0, 10) },
   },
@@ -40,6 +41,12 @@ export function parseProject(raw) {
   const fail = () => {
     throw Error("This file is not a supported print project.");
   };
+  if (g?.preservation != null) {
+    const badge = g.preservation;
+    if (typeof badge !== "object" || typeof badge.enabled !== "boolean" ||
+      ![badge.x, badge.y].every(v => Number.isFinite(v) && v >= 0 && v <= 1) ||
+      !Number.isFinite(badge.size) || badge.size < 32 || badge.size > 96) fail();
+  }
   if (
     !g ||
     !["14mm", "17mm"].includes(p.case?.spine) ||
@@ -102,6 +109,7 @@ export function parseProject(raw) {
     ["fullWrap", g.artwork.fullWrap],
     ["spineLogo", g.artwork.spineLogo],
     ["disc", g.artwork.disc],
+    ["interior", g.artwork.interior],
     ...(g.artwork.screenshots || []).map((a, i) => [`screenshot${i}`, a]),
   ]) {
     if (a == null) continue;
@@ -129,6 +137,15 @@ export function parseProject(raw) {
       fail();
   }
   g.artwork.spineTitleMode ??= "logo";
+  g.preservation ??= { enabled: false, x: 1, y: 0, size: 56 };
+  for (const [key, choices, fallback] of [
+    ["spineBackground", ["black", "white"], "black"],
+    ["mediaMarkColor", ["black", "white"], "black"],
+    ["interiorMode", ["generic", "artwork"], "generic"],
+  ]) {
+    if (g.artwork[key] != null && !choices.includes(g.artwork[key])) fail();
+    g.artwork[key] ??= fallback;
+  }
   // Migrate projects from the logo/QR version of the generator.
   delete g.brandLogos;
   delete g.archive.url;

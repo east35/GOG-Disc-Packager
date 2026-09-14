@@ -9,6 +9,10 @@
     <link rel="stylesheet" href="./generator.css" />
   </head>
   <body>
+    <aside class="beta-banner" aria-label="Beta release">
+      <strong>BETA</strong>
+      <span>Template generator is in active development. Save your work as JSON and check a paper proof before printing.</span>
+    </aside>
     <header>
       <a class="brand" href="../"
         ><img
@@ -28,15 +32,16 @@
           <h1>Template generator</h1>
         </div>
         <div class="actions">
-          <button id="open-button" type="button">Open project</button
+          <button id="open-button" type="button">Open JSON</button
           ><input
             id="open"
             type="file"
             accept="application/json,.json"
             hidden
-          /><button id="save" class="primary">Save project ↓</button>
+          /><button id="save">Save JSON ↓</button><button id="export-pdf" class="primary" disabled>Export PDF ↓</button>
         </div>
       </div>
+      <p class="export-help">Save the JSON file to keep your work in progress, including uploaded artwork. Upload it with <strong>Open JSON</strong> to continue editing. Export PDF for the cover, case interior, and all disc labels.</p>
       <div class="editor">
         <form id="controls" autocomplete="off">
           <section>
@@ -100,6 +105,17 @@
               /></label>
             </div>
             <div id="disc-fields"></div>
+            <label class="check"><input id="preservation" name="game.preservation.enabled" type="checkbox" /> GOG Preservation Program</label>
+            <div id="preservation-controls" hidden>
+              <p class="muted">Adds the program icon to the bottom of the spine and the front cover. Position the front badge below.</p>
+              <label>Front badge · horizontal<input name="game.preservation.x" type="range" min="0" max="1" step="0.01" /></label>
+              <label>Front badge · vertical<input name="game.preservation.y" type="range" min="0" max="1" step="0.01" /></label>
+              <label>Front badge · size<input name="game.preservation.size" type="range" min="32" max="96" step="1" /></label>
+            </div>
+            <label>Spine background<select name="game.artwork.spineBackground"><option value="black">Black</option><option value="white">White</option></select></label>
+            <label>Disc media logo<select name="game.artwork.mediaMarkColor"><option value="black">Black PNG</option><option value="white">White PNG</option></select></label>
+            <label>Clear-case interior<select name="game.artwork.interiorMode"><option value="generic">Generic fallback</option><option value="artwork">Custom artwork</option></select></label>
+            <p class="muted">Choose Case interior in Artwork to upload an inside cover. The generic design is used until custom artwork is selected.</p>
           </section>
           <section>
             <h2><span>03</span> Artwork</h2>
@@ -174,8 +190,7 @@
             <div class="back-copy-note">
               <strong>Fixed editorial blueprint</strong>
               <span
-                >Headline → synopsis → feature rail → screenshot strip. The
-                template owns the spacing, type scale, and safe areas.</span
+                >A full-width headline and synopsis, followed by short highlights and screenshots.</span
               >
             </div>
             <div class="back-blueprint" aria-label="Back cover structure">
@@ -219,7 +234,7 @@
             <fieldset class="back-highlights">
               <legend>Feature / edition highlights</legend>
               <p class="field-help">
-                Four short lines are typeset into a fixed rail. Leave them
+                Four short lines appear in two columns. Leave them
                 blank to use the selected game features automatically.
               </p>
               <div id="back-highlights">
@@ -313,7 +328,7 @@
               ><button data-view="spine" aria-pressed="false">Spine</button
               ><button data-view="disc" aria-pressed="false">
                 Disc labels
-              </button>
+              </button><button data-view="interior" aria-pressed="false">Interior</button>
             </div>
             <label class="check"
               ><input id="guides" type="checkbox" checked /> Guides</label
@@ -347,7 +362,7 @@
           <p class="scope-note">
             Original Figma branding, badges and panel layout. Guides are for
             inspection; confirm case dimensions and your disc manufacturer’s
-            printable area before printing. PDF export is not available yet.
+            printable area before printing. PDF pages use the current template dimensions; print at 100% / actual size and check a paper proof before final printing.
           </p>
           <p id="status" role="status" aria-live="polite"></p>
         </section>

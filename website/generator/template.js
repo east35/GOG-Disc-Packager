@@ -25,6 +25,7 @@ export const ART_SLOTS = {
   fullWrap: "Full-wrap artwork",
   spineLogo: "Game logo",
   disc: "Disc artwork",
+  interior: "Case interior",
   screenshot0: "Screenshot 1",
   screenshot1: "Screenshot 2",
   screenshot2: "Screenshot 3",
@@ -150,7 +151,8 @@ const HOLDER_ADDRESS =
 
 export function createRenderer(templateAssets) {
   const issues = new Set();
-  const make = (w, h, scale = 2) => {
+  let renderScale = 2;
+  const make = (w, h, scale = renderScale) => {
     const c = document.createElement("canvas");
     c.width = Math.ceil(w * scale);
     c.height = Math.ceil(h * scale);
@@ -211,6 +213,8 @@ export function createRenderer(templateAssets) {
       min = size,
       leading = 1.2,
       name = "Text",
+      outline = false,
+      verticalAlign = "top",
     } = {},
   ) {
     const str = String(value || "");
@@ -255,13 +259,25 @@ export function createRenderer(templateAssets) {
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = "top";
-    lines.forEach((l, i) =>
-      ctx.fillText(
-        l,
-        x + (align === "center" ? w / 2 : align === "right" ? w : 0),
-        y + i * font * leading,
-      ),
-    );
+    let textY = y;
+    if (verticalAlign === "center") {
+      ctx.textBaseline = "alphabetic";
+      const ascent = ctx.measureText(lines[0]).actualBoundingBoxAscent,
+        descent = ctx.measureText(lines.at(-1)).actualBoundingBoxDescent,
+        inkHeight = ascent + descent + (lines.length - 1) * font * leading;
+      textY = y + (h - inkHeight) / 2 + ascent;
+    }
+    lines.forEach((l, i) => {
+      const tx = x + (align === "center" ? w / 2 : align === "right" ? w : 0),
+        ty = textY + i * font * leading;
+      if (outline) {
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = "round";
+        ctx.strokeText(l, tx, ty);
+      }
+      ctx.fillText(l, tx, ty);
+    });
     ctx.restore();
   }
   function gradient(ctx, x, y, w, h) {
@@ -360,7 +376,7 @@ export function createRenderer(templateAssets) {
     });
     rating(ctx, g, 8, 86, 85, 44, true);
     rect(ctx, 95, 86, 121, 13, "#000");
-    copy(ctx, HOLDER + "\n" + HOLDER_ADDRESS, 97, 87, 117, 10, 3.2, {
+    copy(ctx, HOLDER + "\n" + HOLDER_ADDRESS, 99, 88, 113, 9, 3.5, {
       color: "#fff",
       align: "center",
       weight: 700,
@@ -448,7 +464,7 @@ export function createRenderer(templateAssets) {
   function backContent(ctx, p, images) {
     const g = p.game,
       key = p.case.content === "key-media",
-      height = key ? 202 : 304,
+      height = key ? 202 : 319,
       screenshots = [0, 1, 2].filter((i) => images["screenshot" + i]),
       customHighlights = backCopyLines(g.includedContent),
       highlights = backHighlights(g),
@@ -458,46 +474,40 @@ export function createRenderer(templateAssets) {
       hasText = headline || g.description || highlights.length || screenshots.length;
     if (hasText) {
       const grad = ctx.createLinearGradient(0, 0, 0, height);
-      grad.addColorStop(0, "#000b");
-      grad.addColorStop(1, "#0003");
+      grad.addColorStop(0, "#000d");
+      grad.addColorStop(0.65, "#0008");
+      grad.addColorStop(1, "#0000");
       rect(ctx, 0, 0, 366, height, grad);
     }
-    copy(ctx, headline, 18, 18, 330, 27, 14, {
+    copy(ctx, headline, 18, 17, 330, 36, 17, {
       color: "#fff",
       weight: 700,
       family: "Barlow Condensed, Arial Narrow, sans-serif",
-      min: 12,
+      min: 14,
       name: "Back headline",
     });
-    const textHeight = screenshots.length
-      ? key
-        ? 78
-        : 160
-      : height - 58;
     copy(
       ctx,
       g.description,
       18,
-      50,
-      hasRail ? 168 : 330,
-      textHeight,
-      8,
-      { color: "#fff", min: 7.5, name: "Back description" },
+      61,
+      330,
+      key ? 53 : 84,
+      key ? 8 : 10,
+      { color: "#fff", min: key ? 7.5 : 9, leading: 1.35, name: "Back description" },
     );
     if (hasRail) {
-      const railX = 202,
-        railY = 50,
-        railW = 147,
-        railH = screenshots.length ? (key ? 76 : 160) : height - 58;
-      rect(ctx, railX, railY, railW, railH, "#000b");
+      const railX = 18,
+        railY = key ? 119 : 155,
+        railW = 330;
       ctx.strokeStyle = "#ffffff55";
       ctx.lineWidth = 0.5;
-      ctx.strokeRect(railX, railY, railW, railH);
+      ctx.strokeRect(railX, railY, railW, 0.5);
       copy(
         ctx,
         customHighlights.length ? "INCLUDES" : "FEATURES",
         railX + 10,
-        railY + 9,
+        railY + 8,
         railW - 20,
         10,
         6.5,
@@ -508,14 +518,14 @@ export function createRenderer(templateAssets) {
           name: "Back highlights heading",
         },
       );
-      const itemStep = key ? 25 : 29;
       railHighlights.forEach((item, index) => {
-        const itemY = railY + 27 + index * itemStep;
+        const itemY = railY + 24 + Math.floor(index / 2) * 23,
+          itemX = railX + (index % 2) * 170;
         ctx.fillStyle = "#d3b5ff";
         ctx.beginPath();
-        ctx.arc(railX + 12, itemY + 4, 2, 0, Math.PI * 2);
+        ctx.arc(itemX + 3, itemY + 4, 1.5, 0, Math.PI * 2);
         ctx.fill();
-        copy(ctx, item, railX + 19, itemY, railW - 27, 20, 6.7, {
+        copy(ctx, item, itemX + 10, itemY, 150, 20, 8, {
           color: "#fff",
           min: 6,
           leading: 1.1,
@@ -526,8 +536,8 @@ export function createRenderer(templateAssets) {
     screenshots.forEach((i, index) => {
       const w = (350 - (screenshots.length - 1) * 7) / screenshots.length,
         x = 8 + index * (w + 7),
-        h = key ? 58 : 78,
-        y = height - h - 8;
+        h = key ? 25 : 70,
+        y = key ? height - h - 4 : height - h - 24;
       image(ctx, images["screenshot" + i], x, y, w, h, {
         focal: assetRef(p, "screenshot" + i)?.focalPoint,
       });
@@ -535,6 +545,10 @@ export function createRenderer(templateAssets) {
       ctx.lineWidth = 1;
       ctx.strokeRect(x, y, w, h);
     });
+    const fade = ctx.createLinearGradient(0, 285, 0, 320);
+    fade.addColorStop(0, "#ffffff00");
+    fade.addColorStop(1, "#ffffffff");
+    rect(ctx, 0, 285, 366, 35, fade);
     if (key) keyBack(ctx);
     ctx.save();
     ctx.translate(0, 319);
@@ -564,12 +578,13 @@ export function createRenderer(templateAssets) {
       return;
     }
     copy(ctx, p.game.title || "YOUR GAME TITLE", x, y, w, h, front ? 36 : 20, {
-      color: "#fff",
+      color: surface === "spine" && p.game.artwork.spineBackground === "white" ? "#000" : "#fff",
       weight: 700,
       align: "center",
       min: front ? 22 : 12,
       family: "Barlow Condensed, Arial Narrow, sans-serif",
       name: front ? "Front title" : "Title",
+      verticalAlign: surface === "spine" ? "center" : "top",
     });
   }
   function drawWrap(p, images, guides) {
@@ -607,31 +622,51 @@ export function createRenderer(templateAssets) {
     title(ctx, p, images, 22, 76, 322, 102, "front");
     rating(ctx, g, 8, 379, 46, 65);
     if (p.media.discCount > 1) {
-      rect(ctx, 58, 422, 83, 18, "#fff");
-      icon(ctx, "disc-count", 62, 426, 22.3, 11);
-      copy(ctx, `${p.media.discCount} DISCS`, 88, 429, 51, 8, 6, {
-        weight: 700,
-      });
+      // Use the supplied badge intact for two discs. Other counts reuse its
+      // transparent frame and disc symbols, replacing only the black text area.
+      ctx.save();
+      ctx.translate(60, 418);
+      ctx.scale(100 / 266, 100 / 266);
+      icon(ctx, "disc-count-badge", 0, 0, 266, 68);
+      if (p.media.discCount !== 2) {
+        rect(ctx, 112, 16, 137, 36, "#000");
+        const label = `${p.media.discCount} DISCS`;
+        ctx.font = "700 23px Arial, sans-serif";
+        ctx.fillStyle = "#fff";
+        ctx.textBaseline = "middle";
+        const spacing = 3,
+          width = ctx.measureText(label).width + (label.length - 1) * spacing;
+        let x = 180 - width / 2;
+        for (const letter of label) {
+          ctx.fillText(letter, x, 35);
+          x += ctx.measureText(letter).width + spacing;
+        }
+      }
+      ctx.restore();
     }
     ctx.restore();
-    if (!images.fullWrap)
-      rect(ctx, geo.spineX, 24, geo.spineWidth, 456, "#181818");
+    rect(ctx, geo.spineX, 24, geo.spineWidth, 456, g.artwork.spineBackground === "white" ? "#fff" : "#000");
+    const preserved = g.preservation?.enabled,
+      spineBadgeSize = Math.min(32, geo.spineWidth - 8),
+      spineBadgeTop = 465 - spineBadgeSize,
+      titleEnd = preserved ? spineBadgeTop - (p.case.content === "key-media" ? 36 : 10) : 441,
+      titleStart = preserved ? 88 : 99;
     ctx.save();
-    ctx.translate(geo.spineX + geo.spineWidth / 2, 24 + 246);
+    ctx.translate(geo.spineX + geo.spineWidth / 2, (titleStart + titleEnd) / 2);
     ctx.rotate(Math.PI / 2);
     title(
       ctx,
       p,
       images,
-      -171,
+      -(titleEnd - titleStart) / 2,
       -(geo.spineWidth - 8) / 2,
-      342,
+      titleEnd - titleStart,
       geo.spineWidth - 8,
       "spine",
     );
     ctx.restore();
     copy(ctx, g.gameId, geo.spineX + 2, 471, geo.spineWidth - 4, 7, 5, {
-      color: "#fff",
+      color: g.artwork.spineBackground === "white" ? "#000" : "#fff",
       weight: 600,
       align: "center",
       name: "Spine game ID",
@@ -666,7 +701,15 @@ export function createRenderer(templateAssets) {
         6,
         { name: "Key media header" },
       );
-      icon(ctx, "game-key", geo.spineX + geo.spineWidth / 2 - 9, 443, 18, 20);
+      icon(ctx, "game-key", geo.spineX + geo.spineWidth / 2 - 9, preserved ? spineBadgeTop - 26 : 443, 18, 20);
+    }
+    if (preserved) {
+      icon(ctx, "preservation-program", geo.spineX + (geo.spineWidth - spineBadgeSize) / 2,
+        spineBadgeTop, spineBadgeSize, spineBadgeSize);
+      const { x, y, size } = g.preservation;
+      // Keep the movable badge inside the front safe area and below the header.
+      icon(ctx, "preservation-program", geo.frontX + 8 + x * (350 - size),
+        24 + 76 + y * (372 - size), size, size);
     }
     if (guides) {
       icon(
@@ -715,21 +758,10 @@ export function createRenderer(templateAssets) {
     });
     title(ctx, p, images, 67, 29, 204, 60, "disc");
     rating(ctx, g, 33, 109, 46, 65);
-    rect(ctx, 46, 179, 22, 22, "#ffffffdd");
-    icon(ctx, "gog-black", 48, 181, 19, 18);
-    rect(ctx, 257, 161, 50, 24, "#ffffffdd");
-    icon(ctx, p.media.type, 259, 163, 46, 20, p.media.type === "cd");
+    icon(ctx, `${p.media.type}-${g.artwork.mediaMarkColor || "black"}`, 259, 163, 46, 20);
     const cd = p.media.type === "cd";
     const legalY = cd ? 236 : 219,
       legalWidth = cd ? 236 : 168;
-    rect(
-      ctx,
-      (d - legalWidth) / 2 - 3,
-      legalY - 2,
-      legalWidth + 6,
-      cd ? 28 : 43,
-      "#0009",
-    );
     copy(
       ctx,
       copyright(g) + " " + archive(g),
@@ -739,7 +771,8 @@ export function createRenderer(templateAssets) {
       cd ? 26 : 42,
       6,
       {
-        color: "#fff",
+        color: "#000",
+        outline: true,
         align: "center",
         leading: 1.33,
         name: "Disc legal copy",
@@ -779,6 +812,7 @@ export function createRenderer(templateAssets) {
       }
     }
     ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "#000";
     ctx.beginPath();
     ctx.arc(d / 2, d / 2, ((d / 2) * 15) / 120, 0, Math.PI * 2);
     ctx.fill();
@@ -791,12 +825,52 @@ export function createRenderer(templateAssets) {
     return c;
   }
 
+  function drawInterior(p, images, guides) {
+    const geo = geometry(p.case.spine), [c, ctx] = make(820, 504);
+    rect(ctx, 0, 0, 820, 504, "#fff");
+    rect(ctx, geo.backX, 24, geo.trimWidth, 456, "#161616");
+    if (p.game.artwork.interiorMode === "artwork" && images.interior) {
+      image(ctx, images.interior, geo.backX, 24, geo.trimWidth, 456, {
+        focal: p.game.artwork.interior?.focalPoint,
+        zoom: p.game.artwork.interior?.scale,
+      });
+    } else {
+      // This supplied image includes the full sheet margins (1640 × 1008),
+      // matching the 820 × 504 template exactly. Do not crop it into the trim.
+      image(ctx, templateAssets["generic-interior"], 0, 0, 820, 504, { contain: true });
+    }
+    if (guides) {
+      ctx.strokeStyle = "#3ecbca";
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(geo.backX, 24, geo.trimWidth, 456);
+      for (const x of [geo.spineX, geo.frontX]) {
+        ctx.beginPath(); ctx.moveTo(x, 24); ctx.lineTo(x, 480); ctx.stroke();
+      }
+    }
+    c.setAttribute("role", "img");
+    c.setAttribute("aria-label", `${p.game.title || "Untitled"} · Case interior`);
+    return c;
+  }
+
   return {
+    exportPages(p, images) {
+      renderScale = 4.3;
+      issues.clear();
+      return (function* () {
+        try {
+          yield { canvas: drawWrap(p, images, false), widthMm: 820 * 0.35, heightMm: 504 * 0.35 };
+          yield { canvas: drawInterior(p, images, false), widthMm: 820 * 0.35, heightMm: 504 * 0.35 };
+          for (const label of p.media.labels)
+            yield { canvas: drawDisc(p, label, images, false), widthMm: 120, heightMm: 120 };
+        } finally { renderScale = 2; }
+      })();
+    },
     render(p, images, { view = "wrap", guides = false, discNumber = 1 } = {}) {
       issues.clear();
       const wrap = drawWrap(p, images, guides),
         geo = geometry(p.case.spine);
       let output = wrap;
+      if (view === "interior") output = drawInterior(p, images, guides);
       // Validate every disc's dynamic text, but release off-screen canvases promptly.
       for (const l of p.media.labels) {
         const disc = drawDisc(p, l, images, guides);
