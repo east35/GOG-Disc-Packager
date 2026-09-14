@@ -259,7 +259,7 @@
                                 </Button>
                             </Grid>
                         </Border>
-                        <TextBlock Text="Disc installation files are combined here for the original GOG installer. This backup is removed after installation completes."
+                        <TextBlock Text="Disc installation files are copied and verified here before setup starts. Opening optical media may take a minute; this backup is removed after installation completes."
                                    Style="{StaticResource SectionHint}"/>
                     </StackPanel>
                 </StackPanel>

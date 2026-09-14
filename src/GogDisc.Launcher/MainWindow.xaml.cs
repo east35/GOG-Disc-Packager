@@ -202,7 +202,7 @@ public partial class MainWindow : Window
         InstalledActions.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
         KeyOptionsSection.Visibility = !installed && IsKeyMedia && !OfflineBackupOnly ? Visibility.Visible : Visibility.Collapsed;
         KeyDestinationSeparator.Visibility = !installed && IsKeyMedia && !OfflineBackupOnly ? Visibility.Visible : Visibility.Collapsed;
-        var usesTemporaryBackup = !installed && (_package.RequiredDiscCount > 1 || DownloadOfflineBackup);
+        var usesTemporaryBackup = !installed && (!IsKeyMedia || DownloadOfflineBackup);
         TemporaryLocationSection.Visibility = !IsKeyMedia && usesTemporaryBackup ? Visibility.Visible : Visibility.Collapsed;
         KeyBackupLocationSection.Visibility = !installed && DownloadOfflineBackup ? Visibility.Visible : Visibility.Collapsed;
         KeyScrollBoundary.Visibility = Visibility.Collapsed;
@@ -263,8 +263,8 @@ public partial class MainWindow : Window
     {
         if (_operation is not null) return;
         _operation = new CancellationTokenSource();
-        if (_package.RequiredDiscCount > 1) ShowCopying(1);
-        else ShowInstalling(1);
+        if (IsKeyMedia) ShowInstalling(1);
+        else ShowCopying(1);
         try
         {
             if (IsKeyMedia)
@@ -272,10 +272,7 @@ public partial class MainWindow : Window
                 await InstallKeyMediaAsync(_operation.Token);
                 return;
             }
-            if (_package.RequiredDiscCount == 1)
-                await InstallFromSingleDiscAsync(_operation.Token);
-            else
-                await StageAndInstallAsync(_operation.Token);
+            await StageAndInstallAsync(_operation.Token);
         }
         catch (OperationCanceledException)
         {
@@ -294,18 +291,6 @@ public partial class MainWindow : Window
             _operation.Dispose();
             _operation = null;
         }
-    }
-
-    /// <summary>A single-disc game runs setup straight from the disc; there is nothing to stage.</summary>
-    private async Task InstallFromSingleDiscAsync(CancellationToken cancellationToken)
-    {
-        var disc = await WaitForDiscAsync(1, cancellationToken);
-        var installerEntry = _package.Files.Single(file => file.Kind == PackageFileKind.Installer &&
-            file.RelativePath.Equals(_package.InstallerRelativePath, StringComparison.OrdinalIgnoreCase));
-        CopyProgress.IsIndeterminate = true;
-        EstimateText.Text = "Preparing the original GOG installer…";
-        var installer = SafePaths.ResolveUnderRoot(disc.Root, installerEntry.DiscPath);
-        await RunInstallerAsync(installer, null, cancellationToken);
     }
 
     private void DownloadOfflineBackup_Changed(object sender, RoutedEventArgs e)
@@ -626,18 +611,45 @@ public partial class MainWindow : Window
             }
 
             var disc = await WaitForDiscAsync(discNumber, cancellationToken);
-            ShowCopying(discNumber);
+            ShowCopying(discNumber, discEntries.Sum(file => file.Size));
             var completedBefore = _package.Files.Where(file => file.Kind == PackageFileKind.Installer &&
                 StagingCopier.IsEntryVerified(file, _stagingRoot, state)).Sum(file => file.Size);
+            var receivedProgress = false;
+            var openingPulse = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            openingPulse.Tick += (_, _) =>
+            {
+                EstimateText.Text = PreparingSetupMessage(discNumber, discEntries.Sum(file => file.Size));
+            };
+            openingPulse.Start();
             var report = new Progress<CopyProgress>(value =>
             {
+                if (!receivedProgress)
+                {
+                    receivedProgress = true;
+                    openingPulse.Stop();
+                    CopyProgress.IsIndeterminate = false;
+                }
                 var completed = completedBefore + value.DiscBytesCopied;
                 CopyProgress.Value = total == 0 ? 0 : completed * 100d / total;
                 UpdateEstimate(completed, total);
                 UpdateDiscLabels(discNumber);
             });
             _log.Write($"Copying disc {discNumber} from {disc.Root}.");
-            await StagingCopier.CopyDiscAsync(disc, _stagingRoot, state, report, cancellationToken);
+            // Opening a large signed installer on optical media can block while Windows and security software
+            // inspect it. Keep that filesystem work off WPF's UI thread so the window remains responsive even
+            // before the first byte is available for a progress update.
+            try
+            {
+                await Task.Run(() => StagingCopier.CopyDiscAsync(
+                    disc, _stagingRoot, state, report, cancellationToken), cancellationToken);
+            }
+            finally
+            {
+                openingPulse.Stop();
+            }
             _log.Write($"Disc {discNumber} verified.");
         }
 
@@ -779,15 +791,27 @@ public partial class MainWindow : Window
         UpdateDiscLabels(discNumber);
     }
 
-    private void ShowCopying(int discNumber)
+    private void ShowCopying(int discNumber, long discBytes = 0)
     {
         ShowOperationPanels();
-        CopyProgress.IsIndeterminate = false;
-        OperationStatusButton.Content = "Copying installation files…";
+        CopyProgress.IsIndeterminate = true;
+        OperationStatusButton.Content = "Windows is preparing the setup...";
         OperationStatusButton.Background = ActiveLabelBrush;
         OperationStatusButton.Foreground = Brushes.White;
-        EstimateText.Text = "Estimated time remaining: Calculating…";
+        EstimateText.Text = PreparingSetupMessage(discNumber, discBytes);
         UpdateDiscLabels(discNumber);
+    }
+
+    private string PreparingSetupMessage(int discNumber, long discBytes)
+    {
+        var mediaName = _package.DiscLayout.FirstOrDefault(disc => disc.DiscNumber == discNumber)?.MediaName ?? "";
+        var bytesPerSecond = mediaName.StartsWith("CD", StringComparison.OrdinalIgnoreCase) ? 2_400_000d
+            : mediaName.StartsWith("DVD", StringComparison.OrdinalIgnoreCase) ? 8_000_000d
+            : mediaName.StartsWith("BD", StringComparison.OrdinalIgnoreCase) ? 18_000_000d
+            : 6_000_000d;
+        var estimatedMinutes = Math.Max(3, (int)Math.Ceiling((discBytes / bytesPerSecond * 2 + 120) / 60));
+        return "This will take some time depending on disc type and drive speed. The install may appear to hang. " +
+               $"If it takes longer than about {estimatedMinutes} minutes, please eject the disc and try again.";
     }
 
     private void ShowWaiting(int discNumber)
@@ -1205,7 +1229,7 @@ public partial class MainWindow : Window
                 _log.Write($"Collection install {index + 1} of {queue.Count}: {_package.Title}.");
                 try
                 {
-                    await InstallFromSingleDiscAsync(_operation.Token);
+                    await StageAndInstallAsync(_operation.Token);
                 }
                 catch (Exception ex) when (!_operation.IsCancellationRequested)
                 {
