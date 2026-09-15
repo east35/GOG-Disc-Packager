@@ -62,6 +62,7 @@ await Run("Offline collection package", TestOfflineCollection);
 await Run("Disc allocation", TestDiscAllocation);
 await Run("Mixed media economy", TestMixedMediaEconomy);
 await Run("Media inventory persistence", TestMediaInventoryPersistence);
+await Run("Single-disc inventory selection", TestSingleDiscInventorySelection);
 await Run("Package build and staging", TestBuildAndStage);
 await Run("Disc swap waits for the drive", TestDriveSettle);
 await Run("Path traversal rejection", TestPathSafety);
@@ -123,6 +124,12 @@ Task TestSetupScanning()
 
 async Task TestOfflineCollection()
 {
+    Equal("planescape torment enhanced edition", SetupNameParser.InferTitle("setup_planescape_torment_enhanced_edition_3.1.4.0_(26531).exe"));
+    Equal("7 billion humans", SetupNameParser.InferTitle("setup_7_billion_humans_1.0_(12345).exe"));
+    Equal("Planescape Torment Enhanced Edition", SetupNameParser.CollectionGameTitle(
+        "Planescape Torment", "Enhanced Edition", "setup_planescape_torment_enhanced_edition_3.1.4.0_(26531).exe"));
+    Equal("planescape torment", SetupNameParser.CollectionGameTitle(
+        "My Favorites", "Enhanced Edition", "setup_planescape_torment_3.1.4.0_(26531).exe"));
     using var fixture = new TempFixture();
     var collectionRoot = fixture.Directory("DOOM");
     var first = Path.Combine(collectionRoot, "DOOM 1");
@@ -158,6 +165,8 @@ async Task TestOfflineCollection()
     var discRoot = Path.Combine(result.PackageDirectory, "DOOM Collection");
     var media = DiscMedia.Load(discRoot);
     Equal(2, media.Package.CollectionGames.Count);
+    Equal("DOOM 1", media.Package.CollectionGames[0].InstallDetectionNames.Single());
+    Equal("DOOM 2", media.Package.CollectionGames[1].InstallDetectionNames.Single());
     Equal(4, media.Package.Files.Count);
     True(File.Exists(Path.Combine(discRoot, media.Package.CollectionGames[1].InstallerRelativePath)),
         "A collection game installer was not packaged.");
@@ -539,6 +548,25 @@ static void Throws<T>(Action action) where T : Exception
     try { action(); }
     catch (T) { return; }
     throw new Exception($"Expected {typeof(T).Name}.");
+}
+
+Task TestSingleDiscInventorySelection()
+{
+    var inventory = MediaCatalog.ParseInventory("BD50 x1, DVD9 x2, BD25 x1");
+    Equal("DVD9", MediaCatalog.SuggestSingle(8_000_000_000L, inventory).Id);
+    Equal("BD25", MediaCatalog.SuggestSingle(9_000_000_000L, inventory).Id);
+
+    try
+    {
+        MediaCatalog.SuggestSingle(60_000_000_000L, inventory);
+        throw new Exception("An oversized collection unexpectedly received a single-disc suggestion.");
+    }
+    catch (InvalidDataException ex)
+    {
+        True(ex.Message.Contains("No single disc", StringComparison.Ordinal),
+            "The single-disc inventory failure did not explain the constraint.");
+    }
+    return Task.CompletedTask;
 }
 
 sealed class TempFixture : IDisposable

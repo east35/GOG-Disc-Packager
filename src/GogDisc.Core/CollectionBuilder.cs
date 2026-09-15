@@ -56,7 +56,7 @@ public static class CollectionBuilder
                     Version = game.Version,
                     InstallerRelativePath = $"Games/{folder}/{game.Family.InstallerFiles[0].RelativePath}",
                     ExtrasRelativePath = $"Extras/{folder}",
-                    InstallDetectionNames = [game.Title]
+                    InstallDetectionNames = [SetupNameParser.CollectionGameTitle(request.Title, game.Title, game.Family.SetupExecutable)]
                 };
                 foreach (var source in game.Family.InstallerFiles.Concat(game.Family.Extras))
                 {

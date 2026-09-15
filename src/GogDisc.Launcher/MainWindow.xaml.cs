@@ -13,6 +13,9 @@ namespace GogDisc.Launcher;
 
 public partial class MainWindow : Window
 {
+    private static readonly Uri DefaultBackgroundUri = new("pack://application:,,,/Assets/DefaultBackground.png");
+    private static readonly Uri DefaultCoverUri = new("pack://application:,,,/Assets/DefaultCover.png");
+    private static readonly Uri DefaultIconUri = new("pack://application:,,,/Assets/DefaultIcon.png");
     private static readonly Brush ActiveLabelBrush = new SolidColorBrush(Color.FromRgb(126, 31, 230));
     private static readonly Brush NormalLabelBrush = new SolidColorBrush(Color.FromRgb(28, 28, 28));
     private static readonly Brush MutedLabelBrush = new SolidColorBrush(Color.FromRgb(112, 112, 112));
@@ -44,7 +47,6 @@ public partial class MainWindow : Window
     private TimeSpan? _lastRemaining;
     private TaskCompletionSource<string?>? _authenticationCodeCompletion;
     private readonly LauncherSettings _launcherSettings;
-    private bool _syncingKeepOpenToggles;
 
     private bool IsKeyMedia => _package.DeploymentType == PackageDeploymentType.GogKeyMedia;
 
@@ -73,7 +75,7 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         _launcherSettings = LauncherSettingsStore.Load();
-        SyncKeepOpenToggles(_launcherSettings.KeepOpenInBackground);
+        KeepOpenMenuItem.IsChecked = _launcherSettings.KeepOpenInBackground;
         // Hero (312) + separator (1) + footer (98) + the 12px shadow margin on both edges.
         ContentScroller.MaxHeight = Math.Max(160d, SystemParameters.WorkArea.Height - 435d);
         EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
@@ -99,37 +101,53 @@ public partial class MainWindow : Window
 
     private void LoadArtwork()
     {
-        LoadImage(_package.BackgroundFile, BackgroundImage);
-        LoadImage(_package.CoverFile, CoverImage);
+        LoadImage(_package.BackgroundFile, BackgroundImage, DefaultBackgroundUri);
+        LoadImage(_package.CoverFile, CoverImage, DefaultCoverUri);
         LoadWindowIcon();
         CoverPlaceholder.Visibility = CoverImage.Source is null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void LoadWindowIcon()
     {
-        if (string.IsNullOrWhiteSpace(_package.IconFile)) return;
-        var path = SafePaths.ResolveUnderRoot(_cacheRoot, _package.IconFile);
-        if (!File.Exists(path)) return;
-        try
+        if (!string.IsNullOrWhiteSpace(_package.IconFile))
         {
-            using var stream = File.OpenRead(path);
-            var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            Icon = decoder.Frames.OrderByDescending(frame => frame.PixelWidth * frame.PixelHeight).FirstOrDefault();
+            var path = SafePaths.ResolveUnderRoot(_cacheRoot, _package.IconFile);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    using var stream = File.OpenRead(path);
+                    var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                    Icon = decoder.Frames.OrderByDescending(frame => frame.PixelWidth * frame.PixelHeight).FirstOrDefault();
+                    return;
+                }
+                catch (Exception ex) { _log.Write("Could not load the game icon: " + ex.Message); }
+            }
         }
-        catch (Exception ex) { _log.Write("Could not load the game icon: " + ex.Message); }
+        Icon = BitmapFrame.Create(DefaultIconUri);
     }
 
-    private void LoadImage(string relativePath, Image target)
+    private void LoadImage(string relativePath, Image target, Uri fallback)
     {
-        if (string.IsNullOrWhiteSpace(relativePath)) return;
-        var path = SafePaths.ResolveUnderRoot(_cacheRoot, relativePath);
-        if (!File.Exists(path)) return;
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.UriSource = new Uri(path);
-        bitmap.EndInit();
-        target.Source = bitmap;
+        if (!string.IsNullOrWhiteSpace(relativePath))
+        {
+            var path = SafePaths.ResolveUnderRoot(_cacheRoot, relativePath);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    var custom = new BitmapImage();
+                    custom.BeginInit();
+                    custom.CacheOption = BitmapCacheOption.OnLoad;
+                    custom.UriSource = new Uri(path);
+                    custom.EndInit();
+                    target.Source = custom;
+                    return;
+                }
+                catch (Exception ex) { _log.Write($"Could not load artwork '{relativePath}': {ex.Message}"); }
+            }
+        }
+        target.Source = new BitmapImage(fallback);
     }
 
     private void BuildDiscLabels()
@@ -189,6 +207,7 @@ public partial class MainWindow : Window
         CollectionActions.Visibility = Visibility.Collapsed;
         SetFooterVisible(true);
         BackButton.Visibility = _collection is null ? Visibility.Collapsed : Visibility.Visible;
+        ArrangeHeaderButtons();
 
         _installState =IsDlcDisc ? FindBaseGameInstall() : InstallDiscovery.Discover(_package);
         var baseGamePresent = _installState is not null &&
@@ -852,6 +871,7 @@ public partial class MainWindow : Window
         ContentScroller.ScrollToTop();
         KeyScrollBoundary.Visibility = Visibility.Collapsed;
         BackButton.Visibility = Visibility.Collapsed;
+        ArrangeHeaderButtons();
         CollectionPanel.Visibility = Visibility.Collapsed;
         CollectionActions.Visibility = Visibility.Collapsed;
         SetFooterVisible(true);
@@ -1113,6 +1133,7 @@ public partial class MainWindow : Window
         RequiredSpaceText.Visibility = installAll ? Visibility.Visible : Visibility.Collapsed;
 
         BackButton.Visibility = Visibility.Collapsed;
+        ArrangeHeaderButtons();
         DefaultPanel.Visibility = Visibility.Collapsed;
         InstalledPanel.Visibility = Visibility.Collapsed;
         ProgressPanel.Visibility = Visibility.Collapsed;
@@ -1155,7 +1176,8 @@ public partial class MainWindow : Window
         CoverFile = _collection.CoverFile,
         IconFile = _collection.IconFile,
         DiscLayout = _collection.DiscLayout,
-        InstallDetectionNames = game.InstallDetectionNames,
+        // Rebuild a specific identity even for older manifests whose detection name was only a folder label.
+        InstallDetectionNames = [SetupNameParser.CollectionGameTitle(_collection!.Title, game.Title, game.InstallerRelativePath)],
         Files = game.Files
     };
 
@@ -1188,23 +1210,25 @@ public partial class MainWindow : Window
         if (IsLoaded && _operation is null && _showingCollection) RefreshHome();
     }
 
-    private void KeepOpen_Changed(object sender, RoutedEventArgs e)
+    private void Overflow_Click(object sender, RoutedEventArgs e)
     {
-        if (!IsLoaded || _syncingKeepOpenToggles || sender is not System.Windows.Controls.Primitives.ToggleButton toggle) return;
-        var keepOpen = toggle.IsChecked == true;
-        _launcherSettings.KeepOpenInBackground = keepOpen;
-        SyncKeepOpenToggles(keepOpen);
-        try { LauncherSettingsStore.Save(_launcherSettings); }
-        catch (Exception ex) { _log.Write("Could not save launcher preference: " + ex.Message); }
+        KeepOpenMenuItem.IsChecked = _launcherSettings.KeepOpenInBackground;
+        OverflowButton.ContextMenu.PlacementTarget = OverflowButton;
+        OverflowButton.ContextMenu.IsOpen = true;
     }
 
-    private void SyncKeepOpenToggles(bool keepOpen)
+    private void ArrangeHeaderButtons()
     {
-        _syncingKeepOpenToggles = true;
-        CollectionKeepOpenToggle.IsChecked = keepOpen;
-        DefaultKeepOpenToggle.IsChecked = keepOpen;
-        InstalledKeepOpenToggle.IsChecked = keepOpen;
-        _syncingKeepOpenToggles = false;
+        var hasBackButton = BackButton.Visibility == Visibility.Visible;
+        BackButton.Margin = new Thickness(hasBackButton ? 16 : 58, 16, 0, 0);
+        OverflowButton.Margin = new Thickness(hasBackButton ? 58 : 16, 16, 0, 0);
+    }
+
+    private void KeepOpenMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        _launcherSettings.KeepOpenInBackground = KeepOpenMenuItem.IsChecked;
+        try { LauncherSettingsStore.Save(_launcherSettings); }
+        catch (Exception ex) { _log.Write("Could not save launcher preference: " + ex.Message); }
     }
 
     private void CollectionGame_Click(object sender, RoutedEventArgs e)

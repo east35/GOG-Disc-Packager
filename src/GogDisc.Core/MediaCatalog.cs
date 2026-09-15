@@ -61,6 +61,18 @@ public static class MediaCatalog
     public static MediaSuggestion Suggest(long payloadBytes, IReadOnlyList<MediaInventoryItem> inventory)
         => SuggestOptions(payloadBytes, inventory)[0];
 
+    public static OpticalMediaType SuggestSingle(long payloadBytes, IReadOnlyList<MediaInventoryItem> inventory)
+    {
+        if (payloadBytes < 0) throw new ArgumentOutOfRangeException(nameof(payloadBytes));
+        return inventory
+            .Where(item => item.Count > 0 && item.Media.UsableBytes >= payloadBytes)
+            .Select(item => item.Media)
+            .OrderBy(media => media.CapacityBytes)
+            .ThenBy(media => media.Id, StringComparer.Ordinal)
+            .FirstOrDefault()
+            ?? throw new InvalidDataException("No single disc in your inventory has enough usable capacity for this collection.");
+    }
+
     public static IReadOnlyList<MediaSuggestion> SuggestOptions(long payloadBytes, IReadOnlyList<MediaInventoryItem> inventory)
     {
         if (payloadBytes < 0) throw new ArgumentOutOfRangeException(nameof(payloadBytes));

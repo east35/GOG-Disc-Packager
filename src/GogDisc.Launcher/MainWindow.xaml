@@ -52,10 +52,26 @@
                 </Button>
 
                 <Button x:Name="BackButton" Width="34" Height="34" HorizontalAlignment="Left" VerticalAlignment="Top"
-                        Margin="16,16,0,0" Style="{StaticResource SecondaryButton}" Padding="0" Click="Back_Click"
+                        Margin="58,16,0,0" Style="{StaticResource SecondaryButton}" Padding="0" Click="Back_Click"
                         ToolTip="Back to collection" Visibility="Collapsed">
                     <Path Data="M 7,1 L 1,7 L 7,13" Stroke="#171717" StrokeThickness="1.6" StrokeStartLineCap="Round"
                           StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                </Button>
+
+                <Button x:Name="OverflowButton" Width="34" Height="34" HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="16,16,0,0" Style="{StaticResource SecondaryButton}" Padding="0"
+                        Click="Overflow_Click" ToolTip="More options">
+                    <Button.ContextMenu>
+                        <ContextMenu Placement="Bottom">
+                            <MenuItem x:Name="KeepOpenMenuItem" Header="Keep launcher open" IsCheckable="True"
+                                      StaysOpenOnClick="True" Click="KeepOpenMenuItem_Click"/>
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="3" Height="3" Fill="#171717"/>
+                        <Ellipse Width="3" Height="3" Fill="#171717" Margin="3,0"/>
+                        <Ellipse Width="3" Height="3" Fill="#171717"/>
+                    </StackPanel>
                 </Button>
 
                 <Border Width="152" Height="211" HorizontalAlignment="Left" VerticalAlignment="Top"
@@ -93,19 +109,6 @@
                           PanningMode="VerticalOnly" Focusable="False" ScrollChanged="ContentScroller_ScrollChanged">
             <Grid x:Name="ScrollableContent" Margin="24,24,24,8">
                 <StackPanel x:Name="CollectionPanel" Visibility="Collapsed">
-                    <StackPanel Style="{StaticResource Section}">
-                        <Border Style="{StaticResource Card}">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Keep launcher open" Style="{StaticResource CardText}"/>
-                                    <TextBlock Text="Leaves this window visible while setup or a game is running." Style="{StaticResource CardSubtext}"/>
-                                </StackPanel>
-                                <ToggleButton Grid.Column="1" x:Name="CollectionKeepOpenToggle" VerticalAlignment="Center" Margin="16,0,0,0"
-                                              Style="{StaticResource KeyToggle}" Checked="KeepOpen_Changed" Unchecked="KeepOpen_Changed"/>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
                     <StackPanel x:Name="InstallAllSection" Style="{StaticResource Section}">
                         <Border Style="{StaticResource Card}">
                             <Grid>
@@ -201,19 +204,6 @@
                 </StackPanel>
 
                 <StackPanel x:Name="DefaultPanel">
-                    <StackPanel Style="{StaticResource Section}">
-                        <Border Style="{StaticResource Card}">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Keep launcher open" Style="{StaticResource CardText}"/>
-                                    <TextBlock Text="Leaves this window visible while setup or a game is running." Style="{StaticResource CardSubtext}"/>
-                                </StackPanel>
-                                <ToggleButton Grid.Column="1" x:Name="DefaultKeepOpenToggle" VerticalAlignment="Center" Margin="16,0,0,0"
-                                              Style="{StaticResource KeyToggle}" Checked="KeepOpen_Changed" Unchecked="KeepOpen_Changed"/>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
                     <StackPanel x:Name="KeyOptionsSection" Visibility="Collapsed" Style="{StaticResource Section}">
                         <TextBlock Text="Install from GOG or download an offline backup" Style="{StaticResource SectionLabel}"/>
                         <Border Style="{StaticResource Card}">
@@ -291,19 +281,6 @@
                 </StackPanel>
 
                 <StackPanel x:Name="InstalledPanel" Visibility="Collapsed">
-                    <StackPanel Style="{StaticResource Section}">
-                        <Border Style="{StaticResource Card}">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Keep launcher open" Style="{StaticResource CardText}"/>
-                                    <TextBlock Text="Leaves this window visible while setup or a game is running." Style="{StaticResource CardSubtext}"/>
-                                </StackPanel>
-                                <ToggleButton Grid.Column="1" x:Name="InstalledKeepOpenToggle" VerticalAlignment="Center" Margin="16,0,0,0"
-                                              Style="{StaticResource KeyToggle}" Checked="KeepOpen_Changed" Unchecked="KeepOpen_Changed"/>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
                     <StackPanel Style="{StaticResource Section}">
                         <TextBlock Text="Current installation:" Style="{StaticResource SectionLabel}"/>
                         <Border Style="{StaticResource Card}">

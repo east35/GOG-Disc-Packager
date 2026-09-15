@@ -303,18 +303,25 @@ public partial class MainWindow : Window
             }
             if (IsCollection)
             {
-                if (MediaBox.SelectedIndex == 8)
-                    throw new InvalidOperationException("The nightly collection prototype currently supports one disc, not mixed or multi-disc media.");
                 _family = null;
                 _plan = null;
                 _collection = SetupCollectionScanner.Scan(SetupBox.Text);
-                var capacity = GetCapacity();
-                var reserve = GetReserve();
+                OpticalMediaType? inventoryMedia = null;
+                if (MediaBox.SelectedIndex == 8)
+                {
+                    var inventory = GetMediaInventory();
+                    if (inventory.Count == 0)
+                        throw new InvalidOperationException("Add at least one blank disc to your inventory.");
+                    inventoryMedia = MediaCatalog.SuggestSingle(_collection.TotalBytes, inventory);
+                    _selectedInventoryMedia = [inventoryMedia];
+                }
+                var capacity = inventoryMedia?.CapacityBytes ?? GetCapacity();
+                var reserve = inventoryMedia?.ReserveBytes ?? GetReserve();
                 if (_collection.TotalBytes + reserve > capacity)
                     throw new InvalidDataException($"The collection payload plus safety reserve is {FormatBytes(_collection.TotalBytes + reserve)}, larger than the selected {FormatBytes(capacity)} disc.");
                 SummaryText.Text =
                     $"{_collection.Games.Count} games, {FormatBytes(_collection.TotalBytes)}\n" +
-                    $"One disc; {FormatBytes(capacity - reserve - _collection.TotalBytes)} usable space remains\n\n" +
+                    $"One {(inventoryMedia?.DisplayName ?? "disc")}; {FormatBytes(capacity - reserve - _collection.TotalBytes)} usable space remains\n\n" +
                     string.Join("\n", _collection.Games.Select(game => $"• {game.Title} ({FormatBytes(game.Family.InstallerBytes)})"));
                 Log($"Scanned collection with {_collection.Games.Count} games.");
                 BuildButton.IsEnabled = true;
@@ -517,15 +524,16 @@ public partial class MainWindow : Window
             });
             if (IsCollection)
             {
-                var capacity = GetCapacity();
+                var inventoryMedia = MediaBox.SelectedIndex == 8 ? _selectedInventoryMedia?.SingleOrDefault() : null;
+                var capacity = inventoryMedia?.CapacityBytes ?? GetCapacity();
                 var collectionResult = await CollectionBuilder.BuildAsync(new CollectionBuildRequest
                 {
                     Title = TitleBox.Text,
                     Version = VersionBox.Text,
                     Collection = _collection!,
                     CapacityBytes = capacity,
-                    ReserveBytes = GetReserve(),
-                    MediaName = $"{capacity / 1_000_000_000d:0.###} GB media",
+                    ReserveBytes = inventoryMedia?.ReserveBytes ?? GetReserve(),
+                    MediaName = inventoryMedia?.DisplayName ?? $"{capacity / 1_000_000_000d:0.###} GB media",
                     OutputDirectory = OutputBox.Text,
                     LauncherExecutable = LauncherBox.Text,
                     BackgroundImage = EmptyToNull(BackgroundBox.Text),
