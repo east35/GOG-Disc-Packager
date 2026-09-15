@@ -149,6 +149,10 @@ changes to `nightly`, then download the result from the Nightly prerelease. Once
 the changes have passed testing, merge `nightly` into `main`; a stable release is
 still created only by pushing a semantic version tag such as `v1.2.3`.
 
+Every stable tag must have user-facing release notes at
+`docs/releases/<tag>.md` (for example, `docs/releases/v1.3.4.md`). The release
+workflow publishes that file verbatim and fails if it is missing.
+
 ## License
 
 GOG Disc Packager is licensed under the [GNU GPLv3](LICENSE).

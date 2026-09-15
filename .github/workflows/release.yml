@@ -69,7 +69,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $notes = ".\docs\releases\${{ github.ref_name }}.md"
+          if (-not (Test-Path -LiteralPath $notes)) {
+            throw "Release notes are required at $notes"
+          }
           gh release create '${{ github.ref_name }}' `
             ".\artifacts\${{ steps.package.outputs.archive }}" `
             ".\artifacts\${{ steps.package.outputs.checksum }}" `
-            --verify-tag --generate-notes --title 'GOG Disc Packager ${{ github.ref_name }}'
+            --verify-tag --notes-file $notes --title 'GOG Disc Packager ${{ github.ref_name }}'

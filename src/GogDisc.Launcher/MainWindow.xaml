@@ -93,6 +93,19 @@
                           PanningMode="VerticalOnly" Focusable="False" ScrollChanged="ContentScroller_ScrollChanged">
             <Grid x:Name="ScrollableContent" Margin="24,24,24,8">
                 <StackPanel x:Name="CollectionPanel" Visibility="Collapsed">
+                    <StackPanel Style="{StaticResource Section}">
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Keep launcher open" Style="{StaticResource CardText}"/>
+                                    <TextBlock Text="Leaves this window visible while setup or a game is running." Style="{StaticResource CardSubtext}"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" x:Name="CollectionKeepOpenToggle" VerticalAlignment="Center" Margin="16,0,0,0"
+                                              Style="{StaticResource KeyToggle}" Checked="KeepOpen_Changed" Unchecked="KeepOpen_Changed"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
                     <StackPanel x:Name="InstallAllSection" Style="{StaticResource Section}">
                         <Border Style="{StaticResource Card}">
                             <Grid>
@@ -188,6 +201,19 @@
                 </StackPanel>
 
                 <StackPanel x:Name="DefaultPanel">
+                    <StackPanel Style="{StaticResource Section}">
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Keep launcher open" Style="{StaticResource CardText}"/>
+                                    <TextBlock Text="Leaves this window visible while setup or a game is running." Style="{StaticResource CardSubtext}"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" x:Name="DefaultKeepOpenToggle" VerticalAlignment="Center" Margin="16,0,0,0"
+                                              Style="{StaticResource KeyToggle}" Checked="KeepOpen_Changed" Unchecked="KeepOpen_Changed"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
                     <StackPanel x:Name="KeyOptionsSection" Visibility="Collapsed" Style="{StaticResource Section}">
                         <TextBlock Text="Install from GOG or download an offline backup" Style="{StaticResource SectionLabel}"/>
                         <Border Style="{StaticResource Card}">
@@ -265,6 +291,19 @@
                 </StackPanel>
 
                 <StackPanel x:Name="InstalledPanel" Visibility="Collapsed">
+                    <StackPanel Style="{StaticResource Section}">
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Keep launcher open" Style="{StaticResource CardText}"/>
+                                    <TextBlock Text="Leaves this window visible while setup or a game is running." Style="{StaticResource CardSubtext}"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" x:Name="InstalledKeepOpenToggle" VerticalAlignment="Center" Margin="16,0,0,0"
+                                              Style="{StaticResource KeyToggle}" Checked="KeepOpen_Changed" Unchecked="KeepOpen_Changed"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
                     <StackPanel Style="{StaticResource Section}">
                         <TextBlock Text="Current installation:" Style="{StaticResource SectionLabel}"/>
                         <Border Style="{StaticResource Card}">

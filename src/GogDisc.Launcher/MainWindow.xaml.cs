@@ -43,6 +43,8 @@ public partial class MainWindow : Window
     private GogDownloadEstimate? _keyEstimate;
     private TimeSpan? _lastRemaining;
     private TaskCompletionSource<string?>? _authenticationCodeCompletion;
+    private readonly LauncherSettings _launcherSettings;
+    private bool _syncingKeepOpenToggles;
 
     private bool IsKeyMedia => _package.DeploymentType == PackageDeploymentType.GogKeyMedia;
 
@@ -70,6 +72,8 @@ public partial class MainWindow : Window
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GOG Offline Backups");
 
         InitializeComponent();
+        _launcherSettings = LauncherSettingsStore.Load();
+        SyncKeepOpenToggles(_launcherSettings.KeepOpenInBackground);
         // Hero (312) + separator (1) + footer (98) + the 12px shadow margin on both edges.
         ContentScroller.MaxHeight = Math.Max(160d, SystemParameters.WorkArea.Height - 435d);
         EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
@@ -772,11 +776,24 @@ public partial class MainWindow : Window
 
         using (process)
         {
-            EstimateText.Text = "Completing installation with the original GOG setup…";
-            _log.Write($"Setup's own log: {setupLog}");
-            await process.WaitForExitAsync(cancellationToken);
-            _log.Write($"Original installer exited with code {process.ExitCode}.");
-            return process.ExitCode;
+            var minimizedForSetup = !_launcherSettings.KeepOpenInBackground;
+            if (minimizedForSetup) WindowState = WindowState.Minimized;
+            try
+            {
+                EstimateText.Text = "Completing installation with the original GOG setup…";
+                _log.Write($"Setup's own log: {setupLog}");
+                await process.WaitForExitAsync(cancellationToken);
+                _log.Write($"Original installer exited with code {process.ExitCode}.");
+                return process.ExitCode;
+            }
+            finally
+            {
+                if (minimizedForSetup)
+                {
+                    WindowState = WindowState.Normal;
+                    Activate();
+                }
+            }
         }
     }
 
@@ -894,7 +911,7 @@ public partial class MainWindow : Window
                 WorkingDirectory = Path.GetDirectoryName(_installState.PlayTarget)!
             }) ?? throw new InvalidOperationException("Windows could not start the game.");
             _log.Write($"Launched game: {_installState.PlayTarget}");
-            Close();
+            if (!_launcherSettings.KeepOpenInBackground) Close();
         }
         catch (Exception ex)
         {
@@ -1169,6 +1186,25 @@ public partial class MainWindow : Window
     private void InstallAll_Changed(object sender, RoutedEventArgs e)
     {
         if (IsLoaded && _operation is null && _showingCollection) RefreshHome();
+    }
+
+    private void KeepOpen_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _syncingKeepOpenToggles || sender is not System.Windows.Controls.Primitives.ToggleButton toggle) return;
+        var keepOpen = toggle.IsChecked == true;
+        _launcherSettings.KeepOpenInBackground = keepOpen;
+        SyncKeepOpenToggles(keepOpen);
+        try { LauncherSettingsStore.Save(_launcherSettings); }
+        catch (Exception ex) { _log.Write("Could not save launcher preference: " + ex.Message); }
+    }
+
+    private void SyncKeepOpenToggles(bool keepOpen)
+    {
+        _syncingKeepOpenToggles = true;
+        CollectionKeepOpenToggle.IsChecked = keepOpen;
+        DefaultKeepOpenToggle.IsChecked = keepOpen;
+        InstalledKeepOpenToggle.IsChecked = keepOpen;
+        _syncingKeepOpenToggles = false;
     }
 
     private void CollectionGame_Click(object sender, RoutedEventArgs e)
