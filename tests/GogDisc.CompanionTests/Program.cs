@@ -4,10 +4,22 @@ using GogDisc.Core;
 
 var root = Path.Combine(Path.GetTempPath(), "companion-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
-foreach (var variable in new[] { "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME" })
+foreach (var variable in new[] { "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_CONFIG_HOME" })
     Environment.SetEnvironmentVariable(variable, Path.Combine(root, variable));
 try
 {
+    if (args.Length == 1 && args[0] == "--gogdl-smoke")
+    {
+        var executable = await new GogDlRuntime().EnsureCurrentAsync(CancellationToken.None);
+        Check(File.Exists(executable), "Linux GOG download helper provisioned");
+        using var helper = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable, "--version")
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true })
+            ?? throw new Exception("Linux GOG download helper did not start");
+        await helper.WaitForExitAsync();
+        Check(helper.ExitCode == 0, "Linux GOG download helper executes");
+        Console.WriteLine($"PASS: {GogDlRuntime.ReleaseAssetName} provisioned at {executable}");
+        return;
+    }
     if (args.Length == 2 && args[0] == "--ui-smoke")
     {
         SmokeApp.Output = args[1];
@@ -18,6 +30,10 @@ try
     LibraryStore.Save(game);
     Check(LibraryStore.Load("fixture")!.Package.Title == game.Package.Title, "Library survives reload");
     Check(LibraryStore.List().Count == 1, "Library discovery");
+    Check(AppPaths.GogAuth.StartsWith(Path.Combine(root, "XDG_CONFIG_HOME"), StringComparison.Ordinal),
+        "GOG credentials use XDG config on Linux");
+    Check(GogDlRuntime.ReleaseAssetName.StartsWith("gogdl_linux_", StringComparison.Ordinal), "Linux GOG helper selected");
+    await TestCollectionMedia(root);
     using (OperationLease.Acquire("fixture"))
     {
         try { using var second = OperationLease.Acquire("fixture"); throw new Exception("Duplicate operation accepted"); }
@@ -58,9 +74,60 @@ try
     LibraryStore.Remove(game, true);
     Check(!Directory.Exists(prefix) && File.Exists(outside), "Explicit prefix deletion does not follow symlinks");
     Check(File.Exists(Path.Combine(extras, "soundtrack")), "Removing game retains saved extras");
+    var keyGame = new LibraryGame
+    {
+        Package = new PackageManifest { PackageId = "gog-123", Title = "Downloaded game", DeploymentType = PackageDeploymentType.GogKeyMedia },
+        GameDirectory = CompanionPaths.DownloadRoot("gog-123")
+    };
+    Directory.CreateDirectory(keyGame.GameDirectory);
+    var downloadedTarget = Path.Combine(keyGame.GameDirectory, "game.exe");
+    File.WriteAllText(downloadedTarget, "fixture");
+    Check(LibraryStore.ValidateTarget(keyGame, downloadedTarget) == downloadedTarget, "Downloaded game target accepted");
+    Reject(() => LibraryStore.ValidateTarget(keyGame, outside), "Downloaded game target containment");
+    LibraryStore.Save(keyGame);
+    LibraryStore.Remove(keyGame, false, true);
+    Check(!Directory.Exists(keyGame.GameDirectory) && File.Exists(outside), "Explicit downloaded game deletion stays in app-owned folder");
     Console.WriteLine("All companion tests passed.");
 }
 finally { Directory.Delete(root, true); }
+
+static async Task TestCollectionMedia(string root)
+{
+    var discRoot = Path.Combine(root, "collection-disc");
+    Directory.CreateDirectory(discRoot);
+    var firstPath = Path.Combine(discRoot, "setup_first.exe");
+    var secondPath = Path.Combine(discRoot, "setup_second.exe");
+    await File.WriteAllTextAsync(firstPath, "first installer");
+    await File.WriteAllTextAsync(secondPath, "second installer");
+    var first = new PackageFileEntry { RelativePath = "setup_first.exe", DiscPath = "setup_first.exe", Size = new FileInfo(firstPath).Length,
+        Sha256 = await Hashing.Sha256FileAsync(firstPath), DiscNumber = 1, SourceSize = new FileInfo(firstPath).Length };
+    var second = new PackageFileEntry { RelativePath = "setup_second.exe", DiscPath = "setup_second.exe", Size = new FileInfo(secondPath).Length,
+        Sha256 = await Hashing.Sha256FileAsync(secondPath), DiscNumber = 1, SourceSize = new FileInfo(secondPath).Length };
+    var package = new PackageManifest
+    {
+        SchemaVersion = 2, PackageId = "collection", Title = "Two games", Version = "1", RequiredDiscCount = 1,
+        TotalDiscCount = 1, Files = [first, second],
+        CollectionGames =
+        [
+            new CollectionGameManifest { GameId = "first", Title = "First", Version = "1", InstallerRelativePath = first.RelativePath, Files = [first] },
+            new CollectionGameManifest { GameId = "second", Title = "Second", Version = "1", InstallerRelativePath = second.RelativePath, Files = [second] }
+        ]
+    };
+    var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(package, JsonFiles.Options);
+    await File.WriteAllBytesAsync(Path.Combine(discRoot, "package.json"), bytes);
+    JsonFiles.Write(Path.Combine(discRoot, "disc.json"), new DiscManifest
+    {
+        SchemaVersion = 2, PackageId = package.PackageId, Version = package.Version, DiscNumber = 1,
+        TotalDiscCount = 1, PackageManifestSha256 = Hashing.Sha256Bytes(bytes), Files = package.Files
+    });
+    var loaded = DiscMedia.Load(discRoot);
+    var selected = CollectionMedia.ForGame(loaded, loaded.Package.CollectionGames[1]);
+    var staging = Path.Combine(root, "collection-staging");
+    var state = StagingStateStore.LoadOrCreate(staging, selected.Package);
+    await StagingCopier.CopyDiscAsync(selected, staging, state, null, CancellationToken.None);
+    Check(selected.Package.PackageId == "collection-second" && File.Exists(Path.Combine(staging, second.RelativePath)) &&
+        !File.Exists(Path.Combine(staging, first.RelativePath)), "Schema 2 collection stages only selected game");
+}
 
 static async Task TestRuntime(string root, LibraryGame game, string target)
 {

@@ -123,7 +123,9 @@ and release signing, see [Code signing and reputation](docs/CODE-SIGNING.md).
 ## Build from source
 
 The Linux companion preview opens existing offline discs, stages and verifies
-installers, and runs them through umu/Proton. It includes a saved game library,
+installers, and runs them through umu/Proton. It also reads current single-disc
+collections and has a GOG Key Media account-download flow; the latter awaits a
+real owned-game test on Linux. It includes a saved game library,
 game icons and shortcuts, extras, logs, and installation management. Look Outside
 has been confirmed working from disc insertion through gameplay on the initial
 Bazzite machine; physical multi-disc testing is deferred. See the

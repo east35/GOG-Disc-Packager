@@ -34,6 +34,13 @@ watching** ends the companion until the next login or manual launch.
 
 - Insert a disc or use **Choose disc folder**. The game icon and cover are cached
   for its window and shortcuts. The companion's menu entry uses the packager icon.
+- A current single-disc collection prompts for the game to install, then stages
+  only that game's files. Each selected game gets its own library record.
+- **GOG Key Media** asks for GOG sign-in, then offers a direct game download or
+  a retained offline-installer backup. The latter runs GOG setup in Proton.
+  Key Media add-ons target a previously installed base game; **Download GOG
+  extras** saves account extras separately. These account flows still need a
+  real owned-game test on Linux.
 - **Install / resume** stages this disc, verifies saved installer data from all
   discs, and names any discs still needed. Setup starts only after verification
   and a confirmation explaining additional storage and possible downloads.
@@ -67,6 +74,9 @@ Per-user files follow XDG data/cache/state locations (defaults shown):
 | --- | --- |
 | `~/.local/share/gog-disc-companion/library/<id>` | Installation record, cached artwork, saved extras |
 | `~/.local/share/gog-disc-companion/prefixes/<id>` | Windows prefix, installed game, potentially saved games |
+| `~/.local/share/gog-disc-companion/downloads/<id>` | Directly downloaded GOG game files |
+| `~/.local/share/gog-disc-companion/backups/<id>` | Retained GOG offline installers |
+| `~/.config/gog-disc-companion/gog-auth.json` | GOG account authorization data |
 | `~/.cache/gog-disc-companion/staging/<id>` | Verified installer files and partial staging |
 | `~/.local/state/gog-disc-companion/logs/<id>.log` | Phase and runtime logs |
 
@@ -76,10 +86,12 @@ only the companion, remove its `~/.local/lib/gog-disc-companion` installation,
 `~/.local/bin/gog-disc-companion` link, and the `gog-disc-companion.desktop` entries
 from the XDG applications and autostart directories. Game data is separate.
 
-Current limits: installed-size estimates are unavailable; only staging space is
-preflighted. Offline runtime provisioning, new library/shortcut/uninstall UI
-behavior on the physical desktop, and launching after reboot still need hands-on
-validation. Key Media and DLC installation remain unsupported. Moving or deleting
+Current limits: installed-size estimates for physical installer media are
+unavailable; only staging space is preflighted. Offline runtime provisioning,
+new library/shortcut/uninstall UI behavior on the physical desktop, and launching
+after reboot still need hands-on validation. Key Media sign-in, owned downloads,
+DLC, and collection selection are implemented but have not been tested with real
+account media on Linux. Moving or deleting
 the published executable used by a shortcut breaks that shortcut; recreate it
 from the installed companion. No automatic runtime upgrades or save migration.
 
@@ -150,12 +162,10 @@ particular Windows game depends on its runtime, dependencies, and hardware.
 - Offer Play, Uninstall, and access to extras, with useful progress and logs.
 - Work without a GOG account for offline installer media.
 
-Defer Linux disc creation, Linux-only media, native Linux game downloads, GOG
-Key Media sign-in/downloads, automatic Steam library integration, a comprehensive
-game-profile database, and bundled offline runtime media. Initially identify Key
-Media clearly and explain that its Linux installation flow is not supported.
-DLC installation into an existing base-game prefix is a later milestone; the
-first prototype must not silently install DLC into a separate prefix.
+Defer Linux disc creation, Linux-only media, native Linux game downloads,
+automatic Steam library integration, a comprehensive game-profile database,
+and bundled offline runtime media. Key Media account downloads and DLC are now
+implemented in the companion preview, with real account validation pending.
 
 ## Intended experience
 
@@ -272,9 +282,9 @@ References: [Valve Proton](https://github.com/ValveSoftware/Proton),
    recovery, extras, and uninstall. Pass the scenarios below on the initial
    supported Linux configuration before describing it as a usable preview.
 4. **Broader validation:** Add older/32-bit and newer 64-bit games, another Linux
-   configuration, and DLC handling. Decide distribution format using results
+   configuration, and real Key Media/DLC tests. Decide distribution format using results
    from runtime access, mount permissions, and desktop integration tests.
-5. **Later expansion:** Revisit Key Media, Steam integration, game profiles,
+5. **Later expansion:** Revisit Steam integration, game profiles,
    native installers, Linux authoring, and portable offline runtime provisioning.
 
 ## Test scenarios
@@ -305,7 +315,8 @@ corruption tests; do not damage the user's original discs or backups.
 | I07 | Relaunch companion and reboot Linux | Saved installation found; Play works with recorded prefix/runtime |
 | I08 | Desktop shortcut; uninstall; extras | Shortcut launches correctly; uninstall stays within selected install; extras remain usable |
 | I09 | Explicit runtime change | Change recorded; failure recoverable without deleting saves or staged installers |
-| I10 | Key Media or DLC during initial prototype | Scope limitation explained; no misleading success or isolated DLC install |
+| I10 | Key Media base game, offline backup, extras, and DLC | Account ownership checked; download/setup/launch tested; DLC targets the base game |
+| M11 | Current schema-2 collection | Select one game and stage only its installer; keep separate library records |
 | R01 | Existing Windows build and representative install flow | Shared-core changes preserve Windows packaging and installation behavior |
 
 For each run record: date, companion commit/build, test ID, pass/fail, distro and

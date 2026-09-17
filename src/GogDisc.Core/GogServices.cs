@@ -111,7 +111,23 @@ public sealed class GogDlRuntime
 {
     private const string LatestReleaseApi = "https://api.github.com/repos/Heroic-Games-Launcher/heroic-gogdl/releases/latest";
     private static readonly HttpClient Http = CreateHttp();
-    public string ExecutablePath => Path.Combine(AppPaths.GogRuntime, "gogdl.exe");
+    public string ExecutablePath => Path.Combine(AppPaths.GogRuntime, OperatingSystem.IsWindows() ? "gogdl.exe" : "gogdl");
+
+    public static string ReleaseAssetName
+    {
+        get
+        {
+            var platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux"
+                : throw new PlatformNotSupportedException("GOG downloads require Windows or Linux.");
+            var architecture = RuntimeInformation.ProcessArchitecture switch
+            {
+                Architecture.X64 => "x86_64",
+                Architecture.Arm64 => "arm64",
+                _ => throw new PlatformNotSupportedException("No GOG download helper exists for this CPU architecture.")
+            };
+            return $"gogdl_{platform}_{architecture}{(OperatingSystem.IsWindows() ? ".exe" : "")}";
+        }
+    }
 
     public async Task<string> EnsureCurrentAsync(CancellationToken cancellationToken)
     {
@@ -125,12 +141,16 @@ public sealed class GogDlRuntime
         response.EnsureSuccessStatusCode();
         using var release = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
         var tag = release.RootElement.GetProperty("tag_name").GetString() ?? throw new InvalidDataException("gogdl release has no version.");
-        var architecture = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "arm64" : "x86_64";
         var asset = release.RootElement.GetProperty("assets").EnumerateArray().FirstOrDefault(item =>
-            string.Equals(item.GetProperty("name").GetString(), $"gogdl_windows_{architecture}.exe", StringComparison.OrdinalIgnoreCase));
-        if (asset.ValueKind == JsonValueKind.Undefined) throw new PlatformNotSupportedException("No compatible gogdl Windows release was found.");
+            string.Equals(item.GetProperty("name").GetString(), ReleaseAssetName, StringComparison.OrdinalIgnoreCase));
+        if (asset.ValueKind == JsonValueKind.Undefined) throw new PlatformNotSupportedException("No compatible gogdl release was found.");
         var versionPath = Path.Combine(AppPaths.GogRuntime, "version.txt");
-        if (File.Exists(ExecutablePath) && File.Exists(versionPath) && File.ReadAllText(versionPath).Trim() == tag) return ExecutablePath;
+        if (File.Exists(ExecutablePath) && File.Exists(versionPath) && File.ReadAllText(versionPath).Trim() == tag)
+        {
+            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(ExecutablePath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            return ExecutablePath;
+        }
 
         var uri = asset.GetProperty("browser_download_url").GetString()!;
         var partial = ExecutablePath + ".partial";
@@ -142,6 +162,8 @@ public sealed class GogDlRuntime
             await input.CopyToAsync(output, cancellationToken);
         }
         File.Move(partial, ExecutablePath, true);
+        if (OperatingSystem.IsLinux()) File.SetUnixFileMode(ExecutablePath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         File.WriteAllText(versionPath, tag);
         return ExecutablePath;
         }
@@ -263,7 +285,10 @@ public sealed class GogDlRuntime
     private async Task<string> RunAsync(IReadOnlyList<string> arguments, IProgress<GogProcessProgress>? progress, CancellationToken cancellationToken)
     {
         var executable = await EnsureCurrentAsync(cancellationToken);
-        Directory.CreateDirectory(Path.GetDirectoryName(AppPaths.GogAuth)!);
+        var authDirectory = Path.GetDirectoryName(AppPaths.GogAuth)!;
+        Directory.CreateDirectory(authDirectory);
+        if (OperatingSystem.IsLinux()) File.SetUnixFileMode(authDirectory,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         start.ArgumentList.Add("--auth-config-path");
         start.ArgumentList.Add(AppPaths.GogAuth);
@@ -274,7 +299,7 @@ public sealed class GogDlRuntime
         {
             while (await reader.ReadLineAsync(cancellationToken) is { } line)
             {
-                lines.Add(line);
+                lock (lines) lines.Add(line);
                 progress?.Report(new GogProcessProgress(line, ParsePercent(line), ParseRemaining(line)));
             }
         }
@@ -433,11 +458,13 @@ public sealed record GogKeyAvailability(bool DirectDownload, int InstallerFiles,
 public sealed class GogAccountDownloads
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
+    private readonly HttpClient _downloads = new() { Timeout = TimeSpan.FromMinutes(10) };
 
     private GogAccountDownloads(string accessToken)
     {
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("GOG-Disc-Packager/2.0");
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        _downloads.DefaultRequestHeaders.UserAgent.ParseAdd("GOG-Disc-Packager/2.0");
     }
 
     /// <summary>Renews the hour-long access token through gogdl, which owns the credential file.</summary>
@@ -485,8 +512,10 @@ public sealed class GogAccountDownloads
     {
         if (!string.IsNullOrWhiteSpace(Path.GetExtension(destination))) return destination;
         var remoteName = Uri.UnescapeDataString(Path.GetFileName(new Uri(actualUrl).AbsolutePath));
-        return string.IsNullOrWhiteSpace(remoteName) ? destination
-            : Path.Combine(Path.GetDirectoryName(destination)!, PackageBuilder.SanitizeFileName(remoteName));
+        if (string.IsNullOrWhiteSpace(remoteName)) return destination;
+        var safeName = PackageBuilder.SanitizeFileName(remoteName);
+        if (safeName is "." or "..") throw new InvalidDataException("GOG returned an invalid filename.");
+        return SafePaths.ResolveUnderRoot(Path.GetDirectoryName(destination)!, safeName);
     }
 
     public async Task<string> DownloadAsync(GogAccountFile file, string destination,
@@ -500,7 +529,7 @@ public sealed class GogAccountDownloads
         var existing = File.Exists(partial) ? new FileInfo(partial).Length : 0;
         using var request = new HttpRequestMessage(HttpMethod.Get, actualUrl);
         if (existing > 0) request.Headers.Range = new RangeHeaderValue(existing, null);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await _downloads.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (existing > 0 && response.StatusCode == HttpStatusCode.OK) { File.Delete(partial); existing = 0; }
         response.EnsureSuccessStatusCode();
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);

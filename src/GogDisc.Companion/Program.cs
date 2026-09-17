@@ -59,7 +59,7 @@ internal static class CompanionCli
             if (!command.Equals("stage", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException($"Unknown command: {command}");
             if (media.Package.DeploymentType != PackageDeploymentType.OfflineMedia)
-                throw new InvalidDataException("GOG Key Media is not supported by the Linux companion yet.");
+                throw new InvalidDataException("Key Media has no disc payload to stage. Open the graphical companion to sign in and download the game.");
 
             var stagingRoot = Option(args, "--staging") ?? CompanionPaths.StagingRoot(media.Package.PackageId);
             Console.WriteLine($"Staging to: {stagingRoot}");

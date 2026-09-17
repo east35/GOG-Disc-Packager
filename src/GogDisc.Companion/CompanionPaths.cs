@@ -4,6 +4,8 @@ internal static class CompanionPaths
 {
     public static string StagingRoot(string packageId) => Path.Combine(CacheRoot, "staging", SafeId(packageId));
     public static string PrefixRoot(string packageId) => Path.Combine(DataRoot, "prefixes", SafeId(packageId));
+    public static string DownloadRoot(string packageId) => Path.Combine(DataRoot, "downloads", SafeId(packageId));
+    public static string BackupRoot(string packageId) => Path.Combine(DataRoot, "backups", SafeId(packageId));
     public static string LogPath(string packageId) => Path.Combine(StateRoot, "logs", SafeId(packageId) + ".log");
     public static string LibraryRoot => Path.Combine(DataRoot, "library");
     public static string PackageRoot(string id) => Path.Combine(LibraryRoot, SafeId(id));

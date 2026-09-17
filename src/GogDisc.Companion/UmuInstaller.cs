@@ -26,7 +26,8 @@ internal static class UmuInstaller
         var prefix = CompanionPaths.PrefixRoot(game.Package.PackageId);
         Directory.CreateDirectory(prefix);
         var runtime = ExistingRuntime(game);
-        if (runtime is null && (phase != "Setup" || File.Exists(Path.Combine(prefix, "version"))))
+        if (runtime is null && (phase != "Setup" && game.Package.DeploymentType != GogDisc.Core.PackageDeploymentType.GogKeyMedia ||
+            File.Exists(Path.Combine(prefix, "version"))))
             throw new IOException("The runtime for this prefix could not be found. Restore it or select its Proton folder.");
         if (runtime is not null && !File.Exists(Path.Combine(runtime, "proton")))
             throw new IOException($"The recorded runtime is missing: {runtime}. Restore it or select its Proton folder.");

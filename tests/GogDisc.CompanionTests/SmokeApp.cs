@@ -34,9 +34,16 @@ internal sealed class SmokeApp : Application
                 // Refreshing after a disc finishes can recycle a row with a null item.
                 window.ShowLibrary();
                 window.ShowPackage(new LoadedDisc(root, package, new DiscManifest { DiscNumber = 2, TotalDiscCount = 2 }));
+                var keyPackage = new PackageManifest
+                {
+                    PackageId = "gog-12345", Title = "Key Media test game", Version = "Current GOG build",
+                    DeploymentType = PackageDeploymentType.GogKeyMedia,
+                    GogKeyProduct = new GogKeyProduct { ProductId = "12345", Title = "Key Media test game" }
+                };
+                window.ShowPackage(new LoadedDisc(root, keyPackage, new DiscManifest { DiscNumber = 1, TotalDiscCount = 1 }));
                 using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height));
                 bitmap.Render(window); bitmap.Save(Output);
-                Console.WriteLine("PASS: GUI startup, artwork cache reuse, library row refresh, game window rendering");
+                Console.WriteLine("PASS: GUI startup, artwork cache reuse, library refresh, Key Media screen rendering");
                 desktop.Shutdown(0);
             }
             catch (Exception ex) { Console.Error.WriteLine(ex); desktop.Shutdown(1); }

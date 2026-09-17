@@ -32,6 +32,7 @@ internal sealed class CompanionWindow : Window
     private readonly Button _quit = new() { Content = "Quit and stop watching" };
     private readonly Button _cancel = new() { Content = "Cancel operation", IsEnabled = false };
     private LoadedDisc? _media;
+    private LoadedDisc? _collectionMedia;
     private LibraryGame? _game;
     private CancellationTokenSource? _operation;
     private bool _refreshing;
@@ -67,7 +68,7 @@ internal sealed class CompanionWindow : Window
         Grid.SetColumn(scroll, 1); grid.Children.Add(scroll); Content = grid;
         Closing += (_, e) => { e.Cancel = true; if (!IsBusy) Hide(); else _status.Text = "Finish or cancel the operation before closing."; };
         _library.SelectionChanged += (_, _) => { if (!_refreshing && !IsBusy && _library.SelectedItem is LibraryGame game) SelectGame(game); };
-        _install.Click += async (_, _) => await RunOperationAsync("Staging", InstallAsync);
+        _install.Click += async (_, _) => await RunOperationAsync("Install", _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? InstallKeyMediaAsync : InstallAsync);
         _play.Click += async (_, _) => await RunOperationAsync("Play", PlayAsync);
         _target.Click += async (_, _) => await RunOperationAsync("Choose executable", ChooseTargetAsync);
         _shortcuts.Click += async (_, _) => await RunOperationAsync("Shortcuts", async () =>
@@ -77,7 +78,7 @@ internal sealed class CompanionWindow : Window
             DesktopIntegration.CreateShortcuts(_game!, true);
             _status.Text = "Shortcuts created with the game icon. Your desktop may ask you to trust its shortcut.";
         });
-        _saveExtras.Click += async (_, _) => await RunOperationAsync("Extras", SaveExtrasAsync);
+        _saveExtras.Click += async (_, _) => await RunOperationAsync("Extras", _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? DownloadKeyExtrasAsync : SaveExtrasAsync);
         _extras.Click += async (_, _) => await RunOperationAsync("Extras", () =>
         {
             var root = Path.Combine(CompanionPaths.PackageRoot(_game!.Package.PackageId), "extras");
@@ -125,6 +126,11 @@ internal sealed class CompanionWindow : Window
     public void ShowPackage(LoadedDisc media)
     {
         if (IsBusy) return;
+        if (media.Package.CollectionGames.Count > 0)
+        {
+            _ = ChooseCollectionGameAsync(media);
+            return;
+        }
         try
         {
             var game = LibraryStore.Load(media.Package.PackageId) ?? new LibraryGame { Package = media.Package };
@@ -136,17 +142,41 @@ internal sealed class CompanionWindow : Window
             catch (Exception ex) { PhaseLog.Write(game.Package.PackageId, "Artwork", ex.Message); }
             PhaseLog.Write(game.Package.PackageId, "Media", $"Disc {media.Disc.DiscNumber}/{media.Disc.TotalDiscCount}: {media.Root}");
             RefreshLibrary(); SelectGame(game);
-            _status.Text = $"Disc {media.Disc.DiscNumber} of {media.Disc.TotalDiscCount} ready. " +
-                (Supported(game) ? "Install / resume verifies and stages this disc. First-time runtime provisioning may require a download." : "Key Media and DLC installation are not supported in this preview.");
+            _status.Text = game.Package.DeploymentType == PackageDeploymentType.GogKeyMedia
+                ? "Key Media ready. Installation requires internet access and ownership on GOG."
+                : $"Disc {media.Disc.DiscNumber} of {media.Disc.TotalDiscCount} ready. Install / resume verifies and stages this disc.";
         }
         catch (Exception ex) { _status.Text = ex.Message; }
         Show(); Activate();
     }
 
-    private static bool Supported(LibraryGame game) => game.Package.DeploymentType == PackageDeploymentType.OfflineMedia && game.Package.ProductType == PackageProductType.BaseGame;
+    private async Task ChooseCollectionGameAsync(LoadedDisc media)
+    {
+        try
+        {
+            _collectionMedia = media;
+            Show(); Activate();
+            var games = media.Package.CollectionGames;
+            var choices = new ComboBox
+            {
+                ItemsSource = games.Select(game => $"{game.Title} — {game.Version}").ToArray(),
+                SelectedIndex = 0,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            if (await DialogAsync(media.Package.Title, choices, "Choose game") && choices.SelectedIndex >= 0)
+                ShowPackage(CollectionMedia.ForGame(media, games[choices.SelectedIndex]));
+        }
+        catch (Exception ex) { ShowError(ex.Message); }
+    }
+
+    private static bool Supported(LibraryGame game) => game.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ||
+        game.Package.DeploymentType == PackageDeploymentType.OfflineMedia && game.Package.ProductType == PackageProductType.BaseGame;
     private void SelectGame(LibraryGame game)
     {
         _game = game;
+        var collectionDisc = _collectionMedia is null ? null : CollectionMedia.ForPackageId(_collectionMedia, game.Package.PackageId);
+        if (collectionDisc is not null) _media = collectionDisc;
+        else if (_media?.Package.PackageId != game.Package.PackageId) _media = null;
         _title.Text = game.Package.Title;
         Title = game.Package.Title + " — GOG Disc Companion";
         _details.Text = $"Version {game.Package.Version}\n{game.Status}";
@@ -174,6 +204,10 @@ internal sealed class CompanionWindow : Window
         _shortcuts.IsEnabled = _uninstall.IsEnabled = ready && _game!.PlayTarget is not null;
         _install.IsEnabled = ready && Supported(_game!) && _media?.Package.PackageId == _game!.Package.PackageId;
         _saveExtras.IsEnabled = ready && _media?.Package.PackageId == _game!.Package.PackageId && _media.Disc.Files.Any(f => f.Kind == PackageFileKind.Extra);
+        if (ready && _game!.Package.DeploymentType == PackageDeploymentType.GogKeyMedia) _saveExtras.IsEnabled = true;
+        if (ready && _game!.Package.GogKeyProduct?.DiscRole == KeyDiscRole.Dlc) _target.IsEnabled = false;
+        _install.Content = _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? "Download / install" : "Install / resume";
+        _saveExtras.Content = _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? "Download GOG extras" : "Save disc extras";
         _choose.IsEnabled = _quit.IsEnabled = _library.IsEnabled = !IsBusy;
         _cancel.IsEnabled = IsBusy;
         _progress.IsVisible = IsBusy;
@@ -193,15 +227,32 @@ internal sealed class CompanionWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _status.Text = "Cancelled. Saved staging is retained and will be verified when you resume.";
+            MarkIncomplete();
+            _status.Text = _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia
+                ? "Cancelled. Any completed downloads are retained for retry."
+                : "Cancelled. Saved staging is retained and will be verified when you resume.";
             PhaseLog.Write(game.Package.PackageId, _phase, "Cancelled");
         }
         catch (Exception ex)
         {
+            MarkIncomplete();
             _status.Text = $"{_phase} failed: {ex.Message}\nLog: {CompanionPaths.LogPath(game.Package.PackageId)}";
             PhaseLog.Write(game.Package.PackageId, _phase, ex.ToString());
         }
-        finally { _operation = null; RefreshLibrary(); UpdateButtons(); }
+        finally
+        {
+            _operation = null;
+            RefreshLibrary();
+            if (_game is not null) _details.Text = $"Version {_game.Package.Version}\n{_game.Status}";
+            UpdateButtons();
+        }
+    }
+
+    private void MarkIncomplete()
+    {
+        if (_game is null || _game.PlayTarget is not null) return;
+        _game.Status = "Incomplete; resume available";
+        try { LibraryStore.Save(_game); } catch { /* Keep the original operation error visible. */ }
     }
 
     private IProgress<CopyProgress> CopyProgress() => new Progress<CopyProgress>(p =>
@@ -239,15 +290,202 @@ internal sealed class CompanionWindow : Window
         if (code == 0) await ChooseTargetAsync();
     }
 
+    private async Task InstallKeyMediaAsync()
+    {
+        var game = _game!;
+        var product = game.Package.GogKeyProduct ?? throw new InvalidDataException("GOG Key Media identity is missing.");
+        var keepBackup = new CheckBox { Content = "Keep offline installer files and run GOG setup through Proton", IsChecked = product.SupportsDirectDownload == false };
+        var options = new StackPanel { Spacing = 12 };
+        options.Children.Add(new TextBlock
+        {
+            Text = "This disc contains a game key, not the installer. GOG sign-in, ownership, and a download are required. " +
+                "The download size will be checked before game files are written.", TextWrapping = TextWrapping.Wrap
+        });
+        if (product.DiscRole != KeyDiscRole.Dlc && product.SupportsDirectDownload != false) options.Children.Add(keepBackup);
+        if (!await DialogAsync("Install from GOG", options, "Continue")) return;
+        var token = _operation!.Token;
+        _phase = "GOG sign-in";
+        await EnsureGogAuthenticationAsync(token);
+        if (product.DiscRole == KeyDiscRole.Dlc)
+        {
+            await InstallKeyDlcAsync(game, product, token);
+            return;
+        }
+        if (keepBackup.IsChecked == true || product.SupportsDirectDownload == false)
+            await InstallKeyBackupAsync(game, product, token);
+        else
+            await InstallKeyDirectAsync(game, product, token);
+    }
+
+    private async Task EnsureGogAuthenticationAsync(CancellationToken token)
+    {
+        var runtime = new GogDlRuntime();
+        _status.Text = "Preparing the GOG download helper…";
+        await runtime.EnsureCurrentAsync(token);
+        if (GogAuthentication.HasCredentials())
+        {
+            try { await runtime.RefreshAuthenticationAsync(token); return; }
+            catch (UnauthorizedAccessException) { /* The saved token was revoked; ask for a fresh sign-in. */ }
+        }
+        DesktopIntegration.Open(GogAuthentication.LoginUrl);
+        var code = new TextBox { Watermark = "Paste the GOG authorization URL or code", MinWidth = 500 };
+        var panel = new StackPanel { Spacing = 12 };
+        panel.Children.Add(new TextBlock { Text = "Sign in on the GOG page opened in your browser, then paste its returned URL or code here.", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(code);
+        if (!await DialogAsync("GOG sign-in", panel, "Sign in") || string.IsNullOrWhiteSpace(code.Text))
+            throw new OperationCanceledException("GOG sign-in was cancelled.");
+        _status.Text = "Completing GOG sign-in…";
+        await runtime.AuthenticateAsync(code.Text, token);
+        if (!GogAuthentication.HasCredentials()) throw new UnauthorizedAccessException("GOG sign-in did not complete.");
+    }
+
+    private IProgress<GogProcessProgress> KeyProgress(LibraryGame game, string label) => new Progress<GogProcessProgress>(value =>
+    {
+        PhaseLog.Write(game.Package.PackageId, "GOG", value.Message);
+        if (value.Percent is { } percent) { _progress.IsIndeterminate = false; _progress.Value = percent; }
+        _status.Text = value.Percent is { } progress ? $"{label}: {progress:N0}%" : label;
+    });
+
+    private async Task InstallKeyDirectAsync(LibraryGame game, GogKeyProduct product, CancellationToken token)
+    {
+        var target = CompanionPaths.DownloadRoot(game.Package.PackageId);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        LibraryStore.EnsureNoLinks(CompanionPaths.DataRoot, target);
+        _phase = "GOG download";
+        _status.Text = "Checking current GOG download size…";
+        var runtime = new GogDlRuntime();
+        var estimate = await runtime.GetEstimateAsync(product, token);
+        var needed = Math.Max(estimate.DownloadBytes, estimate.InstalledBytes);
+        if (new DriveInfo(Path.GetDirectoryName(target)!).AvailableFreeSpace < needed)
+            throw new IOException("Not enough free space for the GOG game download.");
+        game.Status = "Downloading from GOG"; LibraryStore.Save(game);
+        _progress.IsIndeterminate = true;
+        await runtime.InstallAsync(product, target, KeyProgress(game, "Downloading game"), token);
+        if (game.PlayTarget is not null && !Path.GetFullPath(game.PlayTarget).StartsWith(target + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            DesktopIntegration.RemoveShortcuts(game);
+            game.PlayTarget = null;
+        }
+        game.GameDirectory = target;
+        if (!LibraryStore.Executables(game).Any())
+        {
+            PhaseLog.Write(game.Package.PackageId, "GOG", "No playable executable found after download; repairing against on-disk files.");
+            await runtime.RepairAsync(product, target, KeyProgress(game, "Repairing game download"), token);
+        }
+        game.Status = "Downloaded; choose game executable";
+        LibraryStore.Save(game);
+        _status.Text = game.Status;
+        await ChooseTargetAsync();
+    }
+
+    private async Task<IReadOnlyList<string>> DownloadKeyBackupFilesAsync(LibraryGame game, GogKeyProduct product, CancellationToken token)
+    {
+        _phase = "GOG backup";
+        var client = await GogAccountDownloads.CreateAsync(token);
+        var files = (await client.GetFilesAsync(product, token)).Where(file => !file.IsExtra).ToArray();
+        if (files.Length == 0) throw new IOException("GOG did not provide offline installer files for this product and language.");
+        var root = CompanionPaths.BackupRoot(game.Package.PackageId);
+        LibraryStore.EnsureNoLinks(CompanionPaths.DataRoot, root);
+        Directory.CreateDirectory(root);
+        var planned = new List<(GogAccountFile File, string Path)>();
+        foreach (var file in files)
+        {
+            var path = await client.ResolveDestinationAsync(file, Path.Combine(root, "download"), token);
+            if (Path.GetFileName(path) == "download" || planned.Any(item => item.Path == path))
+                throw new InvalidDataException("GOG returned duplicate or unnamed installer files.");
+            planned.Add((file, path));
+        }
+        var total = planned.Sum(item => item.File.Size);
+        if (new DriveInfo(root).AvailableFreeSpace < total)
+            throw new IOException("Not enough free space for the offline installer backup.");
+        _progress.IsIndeterminate = true;
+        var result = new List<string>();
+        foreach (var (file, path) in planned)
+        {
+            token.ThrowIfCancellationRequested();
+            _status.Text = "Downloading " + Path.GetFileName(path) + "…";
+            var saved = await client.DownloadAsync(file, path, null, token);
+            if (file.Size > 0 && new FileInfo(saved).Length != file.Size)
+                throw new IOException("Downloaded installer size does not match GOG metadata: " + Path.GetFileName(saved));
+            result.Add(saved);
+            PhaseLog.Write(game.Package.PackageId, "GOG backup", "Saved " + Path.GetFileName(saved));
+        }
+        return result;
+    }
+
+    private async Task InstallKeyBackupAsync(LibraryGame game, GogKeyProduct product, CancellationToken token)
+    {
+        var files = await DownloadKeyBackupFilesAsync(game, product, token);
+        var setups = files.Where(path => Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase) &&
+            Path.GetFileName(path).StartsWith("setup", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (setups.Length != 1) throw new IOException("The GOG backup has no unique setup executable. The downloaded files were retained.");
+        if (!await ConfirmAsync("Run GOG setup", "The downloaded installer files are saved. Run setup in this game's Proton prefix?", "Run setup")) return;
+        _phase = "Setup";
+        game.Status = "Setup in progress"; LibraryStore.Save(game);
+        var code = await UmuInstaller.RunAsync(game, setups[0], "Setup", token);
+        if (code == 0 && game.GameDirectory is not null)
+        {
+            DesktopIntegration.RemoveShortcuts(game);
+            game.GameDirectory = null;
+            game.PlayTarget = null;
+        }
+        game.Status = code == 0 ? "Setup finished; choose game executable" : $"Setup exited with code {code}; retry available";
+        LibraryStore.Save(game); _status.Text = game.Status;
+        if (code == 0) await ChooseTargetAsync();
+    }
+
+    private async Task InstallKeyDlcAsync(LibraryGame game, GogKeyProduct product, CancellationToken token)
+    {
+        var baseId = "gog-" + product.BaseProductId;
+        var baseGame = LibraryStore.Load(baseId) ?? throw new IOException($"Install {product.BaseTitle ?? "the base game"} first.");
+        if (baseGame.PlayTarget is null || !File.Exists(baseGame.PlayTarget))
+            throw new IOException("The base game installation is missing. Restore it before installing DLC.");
+        if (baseGame.GameDirectory is { } directory)
+        {
+            if (product.SupportsDirectDownload == false)
+                throw new IOException("This DLC has no direct GOG download. Its offline installer needs a base game installed through GOG setup in a Proton prefix.");
+            if (directory != CompanionPaths.DownloadRoot(baseId))
+                throw new InvalidDataException("The base game's download folder is not owned by the companion.");
+            LibraryStore.EnsureNoLinks(CompanionPaths.DataRoot, directory);
+            if (!await ConfirmAsync("Update base game", "GOG will sync the base game's downloaded folder while adding this DLC. Files outside the selected GOG build may be changed. Continue?", "Add DLC")) return;
+            _phase = "GOG DLC";
+            var runtime = new GogDlRuntime();
+            var estimate = await runtime.GetEstimateAsync(product, token);
+            if (new DriveInfo(directory).AvailableFreeSpace < Math.Max(estimate.DownloadBytes, estimate.InstalledBytes))
+                throw new IOException("Not enough free space for the GOG DLC download.");
+            await runtime.InstallAsync(product, directory, KeyProgress(game, "Downloading DLC"), token);
+            if (baseGame.PlayTarget is not null && !File.Exists(baseGame.PlayTarget))
+            {
+                baseGame.PlayTarget = null;
+                baseGame.Status = "Game updated; choose game executable";
+                LibraryStore.Save(baseGame);
+            }
+        }
+        else
+        {
+            var files = await DownloadKeyBackupFilesAsync(game, product, token);
+            var setups = files.Where(path => Path.GetFileName(path).StartsWith("setup", StringComparison.OrdinalIgnoreCase) &&
+                Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (setups.Length != 1) throw new IOException("The GOG DLC backup has no unique setup executable.");
+            if (!await ConfirmAsync("Run DLC setup", "Run this DLC installer in the base game's Proton prefix?", "Run setup")) return;
+            _phase = "DLC setup";
+            var code = await UmuInstaller.RunAsync(baseGame, setups[0], "Setup", token);
+            if (code != 0) throw new IOException($"DLC setup exited with code {code}.");
+        }
+        game.Status = "Installed into " + baseGame.Package.Title;
+        game.InstalledAt = DateTimeOffset.Now;
+        LibraryStore.Save(game); _status.Text = game.Status;
+    }
+
     private async Task ChooseTargetAsync()
     {
         var game = _game!;
         var candidates = await Task.Run(() => LibraryStore.Executables(game).ToArray(), _operation!.Token);
         var choice = new ComboBox { ItemsSource = candidates, SelectedIndex = candidates.Length == 1 ? 0 : -1, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var browse = new Button { Content = "Browse prefix…" };
+        var browse = new Button { Content = game.GameDirectory is null ? "Browse prefix…" : "Browse downloaded game…" };
         browse.Click += async (_, _) =>
         {
-            var prefix = CompanionPaths.PrefixRoot(game.Package.PackageId);
+            var prefix = game.GameDirectory ?? CompanionPaths.PrefixRoot(game.Package.PackageId);
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
                 Title = "Choose the game's Windows executable",
@@ -288,6 +526,35 @@ internal sealed class CompanionWindow : Window
         _status.Text = "This disc's extras have been saved and verified.";
     }
 
+    private async Task DownloadKeyExtrasAsync()
+    {
+        var game = _game!;
+        var product = game.Package.GogKeyProduct ?? throw new InvalidDataException("GOG Key Media identity is missing.");
+        var token = _operation!.Token;
+        await EnsureGogAuthenticationAsync(token);
+        _phase = "GOG extras";
+        var client = await GogAccountDownloads.CreateAsync(token);
+        var files = (await client.GetFilesAsync(product, token)).Where(file => file.IsExtra).ToArray();
+        if (files.Length == 0) throw new IOException("GOG did not list extras for this product.");
+        var root = Path.Combine(CompanionPaths.PackageRoot(game.Package.PackageId), "extras");
+        LibraryStore.EnsureNoLinks(CompanionPaths.DataRoot, root);
+        Directory.CreateDirectory(root);
+        if (new DriveInfo(root).AvailableFreeSpace < files.Sum(file => file.Size))
+            throw new IOException("Not enough free space for the GOG extras.");
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            var path = await client.ResolveDestinationAsync(file, Path.Combine(root, "download"), token);
+            if (Path.GetFileName(path) == "download" || !paths.Add(path))
+                throw new InvalidDataException("GOG returned duplicate or unnamed extras.");
+            _status.Text = "Downloading " + Path.GetFileName(path) + "…";
+            var saved = await client.DownloadAsync(file, path, null, token);
+            if (file.Size > 0 && new FileInfo(saved).Length != file.Size)
+                throw new IOException("Downloaded extra size does not match GOG metadata: " + Path.GetFileName(saved));
+        }
+        _status.Text = "GOG extras saved. Choose Open saved extras to view them.";
+    }
+
     private async Task ChooseRuntimeAsync()
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Choose an installed Proton version folder" });
@@ -302,6 +569,18 @@ internal sealed class CompanionWindow : Window
     private async Task UninstallAsync()
     {
         var game = _game!;
+        if (game.GameDirectory is { } downloaded)
+        {
+            if (downloaded != CompanionPaths.DownloadRoot(game.Package.PackageId))
+                throw new InvalidDataException("The downloaded game folder is not owned by this library entry.");
+            if (!await ConfirmAsync("Remove downloaded game", "Permanently delete this downloaded game folder? Saved games inside that folder will also be deleted. The Proton prefix and offline backups are retained.", "Delete game files")) return;
+            LibraryStore.EnsureNoLinks(CompanionPaths.DataRoot, downloaded);
+            await Task.Run(() => Directory.Delete(downloaded, recursive: true), _operation!.Token);
+            DesktopIntegration.RemoveShortcuts(game);
+            game.PlayTarget = null; game.GameDirectory = null; game.Status = "Uninstalled";
+            LibraryStore.Save(game); _status.Text = "Downloaded game files removed. Prefix and backups retained.";
+            return;
+        }
         var directory = Path.GetDirectoryName(LibraryStore.ValidateTarget(game, game.PlayTarget ?? ""))!;
         var candidates = Directory.EnumerateFiles(directory).Where(p => Path.GetFileName(p).StartsWith("unins", StringComparison.OrdinalIgnoreCase) && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)).ToArray();
         if (candidates.Length != 1) throw new IOException("No unique uninstaller found beside the game. Use Remove from library for an explicit prefix-removal option.");
@@ -320,12 +599,14 @@ internal sealed class CompanionWindow : Window
     {
         var game = _game!;
         var delete = new CheckBox { Content = "Also permanently delete this game's prefix, including saves stored inside it", IsChecked = false };
+        var deleteDownload = new CheckBox { Content = "Also permanently delete downloaded game files, including saves stored there", IsChecked = false };
         var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(new TextBlock { Text = "Remove the library entry and companion-created shortcuts? Cached installers and extras are retained.", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "Remove the library entry and companion-created shortcuts? Installer backups, extras, and downloaded game files are retained unless you select deletion below.", TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(delete);
+        if (game.GameDirectory is not null) panel.Children.Add(deleteDownload);
         if (!await DialogAsync("Remove game", panel, "Remove")) return;
         var deletePrefix = delete.IsChecked == true;
-        await Task.Run(() => LibraryStore.Remove(game, deletePrefix));
+        await Task.Run(() => LibraryStore.Remove(game, deletePrefix, deleteDownload.IsChecked == true));
         _game = null; _title.Text = "Your games"; _details.Text = ""; _status.Text = "Library entry removed.";
         Title = "GOG Disc Companion"; SetIcon(CompanionPaths.AppIcon);
         if (_cover.Source is IDisposable old) old.Dispose(); _cover.Source = null;

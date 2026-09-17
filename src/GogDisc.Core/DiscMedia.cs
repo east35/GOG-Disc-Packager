@@ -19,7 +19,7 @@ public static class DiscMedia
         if (package.DeploymentType == PackageDeploymentType.GogKeyMedia)
             (package.GogKeyProduct ?? throw new InvalidDataException("GOG Key Media identity is missing.")).Validate();
         var disc = JsonFiles.Read<DiscManifest>(discPath);
-        if (disc.SchemaVersion != 1)
+        if (disc.SchemaVersion is < 1 or > 2)
             throw new InvalidDataException($"Unsupported disc manifest schema {disc.SchemaVersion}.");
         if (!string.Equals(package.PackageId, disc.PackageId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The package and disc identifiers do not match.");
@@ -61,6 +61,25 @@ public static class DiscMedia
                 file.PartIndex < 1 || file.PartCount < 1 || file.PartIndex > file.PartCount ||
                 string.IsNullOrWhiteSpace(file.Sha256))
                 throw new InvalidDataException($"Invalid package file entry: {file.RelativePath}");
+        }
+        var collectionIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var game in package.CollectionGames)
+        {
+            if (string.IsNullOrWhiteSpace(game.GameId) || !game.GameId.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') ||
+                !collectionIds.Add(game.GameId) || string.IsNullOrWhiteSpace(game.Title) ||
+                string.IsNullOrWhiteSpace(game.InstallerRelativePath) || game.Files.Count == 0)
+                throw new InvalidDataException("A collection game is missing required metadata.");
+            _ = SafePaths.ResolveUnderRoot(Path.GetTempPath(), game.InstallerRelativePath);
+            foreach (var file in game.Files)
+                if (!package.Files.Any(candidate => candidate.RelativePath == file.RelativePath &&
+                    candidate.DiscPath == file.DiscPath && candidate.Size == file.Size &&
+                    candidate.Sha256 == file.Sha256 && candidate.DiscNumber == file.DiscNumber &&
+                    candidate.Kind == file.Kind && candidate.SourceOffset == file.SourceOffset &&
+                    candidate.SourceSize == file.SourceSize && candidate.PartIndex == file.PartIndex &&
+                    candidate.PartCount == file.PartCount))
+                    throw new InvalidDataException($"Collection file is not part of this package: {file.RelativePath}");
+            if (!game.Files.Any(file => file.RelativePath == game.InstallerRelativePath && file.Kind == PackageFileKind.Installer))
+                throw new InvalidDataException("A collection game has no matching setup file.");
         }
     }
 
