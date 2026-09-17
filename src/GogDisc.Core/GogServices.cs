@@ -82,6 +82,17 @@ public static class GogAuthentication
         catch { return false; }
     }
 
+    /// <summary>
+    /// Discards the stored sign-in so the next attempt asks for a fresh one. Callers use this when
+    /// GOG rejects the saved credential, which otherwise stays on disk looking valid to
+    /// <see cref="HasCredentials"/>.
+    /// </summary>
+    public static void ClearCredentials()
+    {
+        try { if (File.Exists(AppPaths.GogAuth)) File.Delete(AppPaths.GogAuth); }
+        catch { /* A locked file still fails the next refresh, which is the same outcome. */ }
+    }
+
     public static string ExtractAuthorizationCode(string value)
     {
         value = value.Trim();
@@ -139,9 +150,25 @@ public sealed class GogDlRuntime
     public async Task AuthenticateAsync(string authorizationCode, CancellationToken cancellationToken) =>
         await RunAsync(["auth", "--code", GogAuthentication.ExtractAuthorizationCode(authorizationCode)], null, cancellationToken);
 
-    /// <summary>Renews the stored access token, which GOG expires after an hour.</summary>
-    public async Task RefreshAuthenticationAsync(CancellationToken cancellationToken) =>
-        await RunAsync(["auth"], null, cancellationToken);
+    /// <summary>
+    /// Renews the stored access token, which GOG expires after an hour. A refresh token GOG has
+    /// revoked — changing the account password does this — fails here, so translate that into the
+    /// sign-in-again signal callers can act on rather than a generic runtime failure.
+    /// </summary>
+    public async Task RefreshAuthenticationAsync(CancellationToken cancellationToken)
+    {
+        try { await RunAsync(["auth"], null, cancellationToken); }
+        catch (OperationCanceledException) { throw; }
+        catch (InvalidOperationException)
+        {
+            GogAuthentication.ClearCredentials();
+            throw new UnauthorizedAccessException(
+                "The saved GOG sign-in is no longer valid. This happens when the GOG account password " +
+                "changes or the sign-in is revoked. Sign in to GOG again.");
+        }
+        if (!GogAuthentication.HasCredentials())
+            throw new UnauthorizedAccessException("The saved GOG sign-in is no longer valid. Sign in to GOG again.");
+    }
 
     public async Task<GogDownloadEstimate> GetEstimateAsync(GogKeyProduct product, CancellationToken cancellationToken)
     {

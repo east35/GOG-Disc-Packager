@@ -13,7 +13,7 @@ autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
 icons="$data_root/icons/hicolor/256x256/apps"
 
 if [[ ! -x "$published/gog-disc-companion" ]]; then
-  echo "Run ./publish-linux.sh first." >&2
+  echo "Companion executable not found. Build the preview or extract the complete archive first." >&2
   exit 1
 fi
 command -v python3 >/dev/null || { echo "Python 3 is required to install desktop entries." >&2; exit 1; }
@@ -39,4 +39,4 @@ if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-datab
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -f -t "$data_root/icons/hicolor" || true; fi
 
 echo "Installed GOG Disc Companion. Close a running companion before using an updated build."
-echo "Open it from the application menu. Its media watcher starts at the next login."
+echo "Open it from the application menu now. Its media watcher also starts automatically at future logins."

@@ -30,15 +30,13 @@ public static class KeyMediaBuilder
             {
                 var disc = request.Discs[index];
                 var number = index + 1;
-                var discFolder = multiple
-                    ? Path.Combine(buildRoot, PackageBuilder.SanitizeFileName($"Disc {number} - {disc.Product.Title.Trim()}"))
-                    : buildRoot;
-                var mediaRoot = Path.Combine(discFolder, "Key Media");
+                var discFolder = PackageBuilder.DiscFolderName($"{setTitle} (Game Key)", number, request.Discs.Count);
+                var mediaRoot = Path.Combine(buildRoot, discFolder);
                 Directory.CreateDirectory(mediaRoot);
                 manifests.Add(await WriteDiscAsync(request, disc, mediaRoot, cancellationToken));
                 instructions.Append(multiple
-                    ? $"Disc {number} - {Clean(disc.Product.Title)}: burn the CONTENTS of \"{Path.GetFileName(discFolder)}\\Key Media\".\r\n"
-                    : "Burn the CONTENTS of the Key Media folder to any filesystem-based physical medium.\r\n");
+                    ? $"Disc {number} - {Clean(disc.Product.Title)}: burn the CONTENTS of \"{discFolder}\".\r\n"
+                    : $"Burn the CONTENTS of the \"{discFolder}\" folder to any filesystem-based physical medium.\r\n");
             }
 
             if (multiple)

@@ -8,19 +8,29 @@ original box crashed during the Witcher test; its cause remains unconfirmed.
 
 ## Using the preview
 
-Build with `./publish-linux.sh`, then run `./install-linux.sh`. The publish script
-uses a .NET 8 SDK or the SDK container through Podman, and produces a self-contained
-Linux x64 directory plus `artifacts/gog-disc-companion-linux-x64-preview.tar.gz`
-and its SHA-256 file. Extracted archives include `install.sh` for per-user
-installation. Dependencies are umu-launcher, the graphical desktop libraries
+For a published preview, download the Linux x64 archive and its SHA-256 file,
+verify the archive, extract it, then open **Install GOG Disc Companion** in the
+extracted folder. The graphical installer installs for the current user without
+root access. If the desktop asks whether to trust or execute the launcher,
+choose to execute it. `install.sh` is available in the extracted folder for
+terminal installation. The graphical installer starts the companion hidden in
+watch mode immediately; no logout is needed. The watcher also starts at future
+logins.
+
+Maintainers build with `./publish-linux.sh`. The script uses a .NET 8 SDK or the
+SDK container through Podman, and produces a self-contained Linux x64 directory
+plus `artifacts/gog-disc-companion-linux-x64-preview.tar.gz` and its SHA-256 file.
+Dependencies are umu-launcher, the graphical desktop libraries
 required by Avalonia, Python 3 for desktop-entry installation, and `xdg-open` /
 `xdg-user-dir` for folders and desktop shortcuts. Runtime provisioning may need
 network access. The companion never needs root.
 
 Open **GOG Disc Companion** from the application menu to see the library. A
 separate `--watch` startup mode stays hidden until a supported disc is mounted.
-Opening the app again asks the existing watcher to show its window. Closing the
-window keeps the watcher alive; **Quit companion** stops it.
+Opening the app again asks the existing watcher to show its window. Closing or
+hiding the window keeps the watcher alive. Its system tray icon stays visible
+while watching; use its menu to open the library or quit. **Quit and stop
+watching** ends the companion until the next login or manual launch.
 
 - Insert a disc or use **Choose disc folder**. The game icon and cover are cached
   for its window and shortcuts. The companion's menu entry uses the packager icon.
@@ -106,6 +116,15 @@ at 18:42:59 CDT without a recorded cause or clean shutdown. Optical read errors
 occurred earlier at 18:27–18:30, before the logged disc-one mount. Do not label
 this interrupted physical multi-disc run as passed or attribute its crash to the
 companion without further evidence.
+
+On September 17, 2026, a new Witcher two-disc attempt on SteamOS 3.8.16 verified
+disc 1 and recorded that disc 2 was needed. After the Deck resumed from sleep,
+the companion crashed while refreshing its library: Avalonia supplied a null
+item to the row template. The crash was logged at 14:46:54 CDT, about 12 seconds
+after disc 1 verification. The verified disc 1 files and staging record survived.
+The row template now tolerates a null item, and a GUI refresh smoke test passes.
+Disc 2 and setup are still untested on this run. This process crash does not
+establish the cause of the earlier machine shutdown.
 
 ## Direction
 

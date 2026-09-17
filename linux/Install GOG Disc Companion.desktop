@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install GOG Disc Companion
+Comment=Install GOG Disc Companion for this user
+Exec=python3 -c "import os,subprocess,sys; subprocess.run(['bash',os.path.join(os.path.dirname(sys.argv[1]),'install-gui.sh')])" %k
+Icon=system-software-install
+Categories=Game;
+Terminal=false
+StartupNotify=true

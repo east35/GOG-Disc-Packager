@@ -10,7 +10,7 @@
         </Grid.RowDefinitions>
         <StackPanel>
             <TextBlock Text="GOG DISC PACKAGER" FontSize="28" FontWeight="SemiBold"/>
-            <TextBlock Text="Create a trustworthy one-product physical release from a stock GOG setup family."
+            <TextBlock Text="Create trustworthy physical releases from stock GOG setup files."
                        Foreground="#AEB7C7" Margin="0,5,0,18"/>
         </StackPanel>
 
@@ -20,10 +20,19 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <TextBlock Text="Deployment type" Width="165" VerticalAlignment="Center"/>
                 <ComboBox x:Name="DeploymentTypeBox" Width="280" SelectedIndex="0" SelectionChanged="DeploymentTypeBox_SelectionChanged">
-                    <ComboBoxItem Content="Offline media (installer payload on media)"/>
-                    <ComboBoxItem Content="GOG Key Media (download when installing)"/>
+                    <ComboBoxItem Content="Standard Game Backup (single game on one or more discs)"/>
+                    <ComboBoxItem Content="Game Collection Backup (multiple games on a single disc)"/>
+                    <ComboBoxItem Content="Game-Key Disc (download online GOG backup)"/>
                 </ComboBox>
             </StackPanel>
+            <Grid x:Name="KeyAccountPanel" Visibility="Collapsed" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="165"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="GOG account" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" x:Name="AccountStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Foreground="#8F99AA" Margin="0,4"/>
+                <Button Grid.Column="2" x:Name="AccountSignInButton" Content="Sign in to GOG…" Click="SignInGog_Click"/>
+            </Grid>
+
             <Grid x:Name="KeyIdentityPanel" Visibility="Collapsed" Margin="0,0,0,10">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="165"/><ColumnDefinition Width="280"/><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
@@ -79,8 +88,13 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock x:Name="SetupLabel" Grid.Row="0" Text="GOG setup" VerticalAlignment="Center"/>
-                <TextBox Grid.Row="0" Grid.Column="1" x:Name="SetupBox"/>
+                <TextBlock x:Name="SetupLabel" Grid.Row="0" Text="GOG setup" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                <StackPanel Grid.Row="0" Grid.Column="1">
+                    <TextBox x:Name="SetupBox"/>
+                    <TextBlock x:Name="CollectionFolderHint" Visibility="Collapsed" Margin="2,5,0,6"
+                               Foreground="#8F99AA" TextWrapping="Wrap"
+                               Text="Recommended layout: Collection\Game Name\Base Game\setup_*.exe (+ .bin files), with optional extras in Collection\Game Name\Extras\."/>
+                </StackPanel>
                 <Button x:Name="SetupBrowseButton" Grid.Row="0" Grid.Column="2" Content="Browse…" Click="BrowseSetup_Click"/>
 
                 <TextBlock Grid.Row="1" Text="Title" VerticalAlignment="Center"/>
@@ -97,7 +111,7 @@
                 <TextBlock x:Name="MediaLabel" Grid.Row="4" Text="Media" VerticalAlignment="Top" Margin="0,8,0,0"/>
                 <StackPanel x:Name="MediaPanel" Grid.Row="4" Grid.Column="1">
                     <StackPanel Orientation="Horizontal">
-                        <ComboBox x:Name="MediaBox" Width="280" SelectedIndex="5" SelectionChanged="MediaBox_SelectionChanged">
+                        <ComboBox x:Name="MediaBox" Width="280" SelectedIndex="8" SelectionChanged="MediaBox_SelectionChanged">
                             <ComboBoxItem Content="CD-R 74 min (650 MB)"/>
                             <ComboBoxItem Content="CD-R 80 min (700 MB)"/>
                             <ComboBoxItem Content="DVD-5, single layer (4.7 GB)"/>
@@ -106,18 +120,19 @@
                             <ComboBoxItem Content="BD-50 (50 GB)"/>
                             <ComboBoxItem Content="BDXL-100 (100 GB)"/>
                             <ComboBoxItem Content="BDXL-128 (128 GB)"/>
-                            <ComboBoxItem Content="Mixed media - optimize inventory"/>
+                            <ComboBoxItem Content="Use my disc inventory"/>
                             <ComboBoxItem Content="Custom capacity"/>
                         </ComboBox>
                         <TextBox x:Name="CustomCapacityBox" Width="100" Text="50" Margin="10,4,0,4" Visibility="Collapsed"/>
                         <TextBlock x:Name="CustomCapacityLabel" Text="GB" Margin="7,0" VerticalAlignment="Center"
                                    Foreground="#AEB7C7" Visibility="Collapsed"/>
                     </StackPanel>
-                    <StackPanel x:Name="MixedMediaPanel" Visibility="Collapsed" Margin="0,7,0,6">
-                        <TextBlock Text="Available blank discs" Foreground="#C9D0DB"/>
-                        <TextBox x:Name="MediaInventoryBox" Text="BD50 x1, BD25 x10" TextChanged="MediaInventoryBox_TextChanged"/>
-                        <TextBlock Margin="2,3,0,0" Foreground="#8F99AA" TextWrapping="Wrap"
-                                   Text="Example: BD50 x1, BD25 x10. Also accepts CD650, CD700, DVD5, DVD9, BD100, and BD128."/>
+                    <StackPanel x:Name="MixedMediaPanel" Visibility="Visible" Margin="0,7,0,6">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="InventorySummaryText" Foreground="#AEB7C7" VerticalAlignment="Center"/>
+                            <Button Content="Manage inventory…" Margin="12,0,0,0" Padding="10,3"
+                                    Click="ManageInventory_Click"/>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
 

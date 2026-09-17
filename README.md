@@ -11,8 +11,6 @@ game when you install it.
 **[Watch the video](https://youtu.be/HWElimyy0rs?si=kwxalTj4uyCF9lfO)** ·
 **[Figma artwork template](https://www.figma.com/design/CBR9nICUoNR4Km00Dc8Nui/GOG-Disc-Packager?node-id=0-1&t=9PPg85pr21azP88F-1)**
 
-![GOG Disc Packager application](img/Image%203.png)
-
 > GOG Disc Packager is an independent preservation tool. It is not affiliated
 > with or endorsed by GOG, CD Projekt, or any publisher. You must own the games
 > you package and provide your own installers and artwork.
@@ -33,10 +31,12 @@ turning the installation into a reusable offline backup.
 
 1. Download and extract the [latest release](https://github.com/east35/GOG-Disc-Packager/releases/latest), then run `GOG Disc Packager.exe`.
 2. Choose **Offline installer media** and select the game's original GOG `setup_*.exe`. Matching `.bin` files are found automatically.
-3. Choose a disc type, a custom capacity, or **Mixed media** if you want the app to optimize a supply such as `BD50 x1, BD25 x10`.
+3. The media picker defaults to **Use my disc inventory**. Manage or clear saved blank-media quantities in a separate window, or choose a fixed disc type or custom capacity instead. After scanning, choose among valid layouts by disc count, case capacity, media combination, and unused space. Once a build succeeds, the app can deduct the selected blanks with your confirmation.
 4. Optionally add extras and custom background, cover, and icon artwork.
 5. Choose an output folder, select **Scan package**, review the proposed layout, then select **Build disc folders**.
-6. Burn the **contents** of each generated `Disc NN of NN` folder—not the folder itself—to its own disc or ISO.
+6. Burn the **contents** of each generated disc folder—not the folder itself—to its own disc or ISO. A single disc is named after the game; a set is named `Title - Disc 1`, `Title - Disc 2`, and so on.
+
+Blank-media inventory is user data stored under Local AppData, outside the installation and test-build folders, so application updates keep it intact.
 
 Use UDF 2.50 or later, give each disc a distinct label ending in its disc
 number, and enable verify-after-write. Mount and test ISOs before burning them.
@@ -44,12 +44,42 @@ number, and enable verify-after-write. Mount and test ISOs before burning them.
 Windows may ignore `autorun.inf`. If nothing opens automatically, run
 `Launch.exe` from the disc.
 
+### Put multiple games on one disc (nightly)
+
+Choose **Game Collection Backup**, then select a parent folder organized like
+this:
+
+```text
+Collection/
+  Game Name/
+    Base Game/
+      setup_game.exe
+      setup_game-1.bin
+    Extras/
+      manual.zip
+```
+
+That layout is a suggestion. Each game folder needs exactly one stock
+`setup_*.exe` family, in any subfolder (or loose); only `Extras` is excluded
+from the search. Setup and `.bin` files inside `Extras` are not packaged.
+`Extras` is optional and may contain nested folders. The collection launcher
+offers to install the whole collection on first run, or lets you pick games one
+at a time; each opens its normal install, play, extras, and uninstall screen.
+
+The initial nightly implementation builds one collection disc only. It rejects
+a collection that does not fit the selected medium; multi-disc collections and
+per-game artwork are not yet supported.
+
 ## Make GOG Key Media
 
 1. Choose **GOG Key Media**.
-2. Enter a game title or paste its GOG store URL and select the matching product.
-3. Build the package.
-4. Burn or copy the **contents** of the generated `Key Media` folder to any filesystem-based CD, DVD, Blu-ray, or USB drive.
+2. Select **Sign in to GOG**. The packager keeps its own sign-in: being signed in
+   to GOG Galaxy or the GOG website does not sign in this app. Signing in lets the
+   packager search your library, list the add-ons you own, and confirm GOG can
+   actually deliver the product before anything is burned.
+3. Enter a game title or paste its GOG store URL and select the matching product.
+4. Build the package.
+5. Burn or copy the **contents** of the generated `Title (Game Key)` folder to any filesystem-based CD, DVD, Blu-ray, or USB drive.
 
 During installation, the launcher opens GOG's browser sign-in and confirms that
 the account owns the game. Credentials, tokens, installers, and temporary
@@ -72,10 +102,6 @@ required.
 
 Incremental `patch_*.exe` files are excluded from automatic installation but can
 be kept as archival extras. Package base games and DLC separately.
-
-![Multi-disc installation screen](img/Image%201.png)
-
-![Installed-game launcher screen](img/Image%202.png)
 
 ## Requirements and troubleshooting
 
@@ -128,6 +154,8 @@ GOG Disc Tool media, and opens the install prompt automatically. It stages and
 verifies offline installers before launching them through `umu-run`. Open it from
 the application menu to manage saved games without a disc. The publish script
 also creates a preview tar archive with an installer and SHA-256 checksum.
+Users can extract that archive and open **Install GOG Disc Companion** without
+building from source.
 
 Building the Windows packager and launcher requires Windows 10 or 11, the .NET
 8 SDK, and PowerShell.
@@ -136,11 +164,30 @@ Building the Windows packager and launcher requires Windows 10 or 11, the .NET
 powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1
 ```
 
+Builds go to `%LOCALAPPDATA%\GOG Disc Packager\Builds\GOGDiscTool-<timestamp>`,
+outside the repository. Pass `-OutputDirectory` to choose another location.
+
 Run the self-tests with:
 
 ```powershell
 dotnet run --project .\tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj -c Release
 ```
+
+## Nightly test builds
+
+Work that needs real-disc testing before a stable release goes on the `nightly`
+branch. Every push to that branch, as well as the daily scheduled run, replaces
+the rolling **Nightly** GitHub prerelease with a signed Windows ZIP and checksum.
+These builds may be unstable and should not be presented as the normal download.
+
+Start new test work by bringing `nightly` up to date with `main`, commit and push
+changes to `nightly`, then download the result from the Nightly prerelease. Once
+the changes have passed testing, merge `nightly` into `main`; a stable release is
+still created only by pushing a semantic version tag such as `v1.2.3`.
+
+Every stable tag must have user-facing release notes at
+`docs/releases/<tag>.md` (for example, `docs/releases/v1.3.4.md`). The release
+workflow publishes that file verbatim and fails if it is missing.
 
 ## License
 

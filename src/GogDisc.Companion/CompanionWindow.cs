@@ -28,7 +28,8 @@ internal sealed class CompanionWindow : Window
     private readonly Button _runtime = new() { Content = "Choose Proton folder…" };
     private readonly Button _logs = new() { Content = "Open log" };
     private readonly Button _choose = new() { Content = "Choose disc folder…" };
-    private readonly Button _quit = new() { Content = "Quit companion" };
+    private readonly Button _hide = new() { Content = "Hide window" };
+    private readonly Button _quit = new() { Content = "Quit and stop watching" };
     private readonly Button _cancel = new() { Content = "Cancel operation", IsEnabled = false };
     private LoadedDisc? _media;
     private LibraryGame? _game;
@@ -45,17 +46,19 @@ internal sealed class CompanionWindow : Window
         SetIcon(CompanionPaths.AppIcon);
         _library.ItemTemplate = new FuncDataTemplate<LibraryGame>((game, _) =>
         {
+            // Avalonia can request a template with a null item while recycling a row.
+            if (game?.Package is null) return new Grid();
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("36,*"), Margin = new Thickness(0, 4) };
             var icon = new Image { Width = 28, Height = 28, VerticalAlignment = VerticalAlignment.Top };
-            try { icon.Source = new Bitmap(DesktopIntegration.IconPath(game!)); } catch { }
+            try { icon.Source = new Bitmap(DesktopIntegration.IconPath(game)); } catch { }
             row.Children.Add(icon);
-            var title = new TextBlock { Text = game!.Package.Title, TextWrapping = TextWrapping.Wrap };
+            var title = new TextBlock { Text = game.Package.Title, TextWrapping = TextWrapping.Wrap };
             Grid.SetColumn(title, 1); row.Children.Add(title); return row;
         });
         var actions = Buttons(_play, _install, _target, _shortcuts);
         var extras = Buttons(_saveExtras, _extras);
         var management = new Expander { Header = "Manage game", Content = Buttons(_runtime, _uninstall, _remove, _logs) };
-        var footer = Buttons(_choose, _cancel, _quit);
+        var footer = Buttons(_choose, _cancel, _hide, _quit);
         var info = new StackPanel { Spacing = 16, Margin = new Thickness(24) };
         foreach (var control in new Control[] { _title, _cover, _details, _status, _progress, actions, extras, management, footer }) info.Children.Add(control);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("230,*"), Margin = new Thickness(16) };
@@ -92,6 +95,7 @@ internal sealed class CompanionWindow : Window
             if (folders.Count > 0) try { ShowPackage(DiscMedia.Load(folders[0].Path.LocalPath)); } catch (Exception ex) { _status.Text = ex.Message; }
         };
         _cancel.Click += (_, _) => _operation?.Cancel();
+        _hide.Click += (_, _) => { if (!IsBusy) Hide(); };
         _quit.Click += (_, _) => { if (!IsBusy) quitAction(); };
         RefreshLibrary(); UpdateButtons();
     }

@@ -53,11 +53,12 @@ public partial class App : Application
             {
                 if (_activateEvent.WaitOne(0))
                 {
-                    window.Show();
-                    if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
-                    window.Activate();
-                    window.Topmost = true;
-                    window.Topmost = false;
+                    var active = Current.MainWindow ?? window;
+                    active.Show();
+                    if (active.WindowState == WindowState.Minimized) active.WindowState = WindowState.Normal;
+                    active.Activate();
+                    active.Topmost = true;
+                    active.Topmost = false;
                 }
             };
             _activationTimer.Start();

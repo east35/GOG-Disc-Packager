@@ -1,0 +1,24 @@
+<Window x:Class="GogDisc.Packager.GogSignInWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Sign in to GOG" Width="620" SizeToContent="Height" ResizeMode="NoResize"
+        Background="#11151D" Foreground="White" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <StackPanel Margin="24">
+        <TextBlock Text="SIGN IN TO GOG" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Foreground="#AEB7C7" TextWrapping="Wrap" Margin="0,6,0,16"
+                   Text="This packager keeps its own GOG sign-in. Being signed in to GOG Galaxy or the GOG website does not sign in this app."/>
+        <TextBlock Foreground="#C9D0DB" TextWrapping="Wrap"
+                   Text="1. Open the GOG sign-in page and sign in there."/>
+        <Button x:Name="OpenBrowserButton" Content="Open GOG sign-in page" HorizontalAlignment="Left"
+                Margin="0,8,0,14" Click="OpenBrowser_Click"/>
+        <TextBlock Foreground="#C9D0DB" TextWrapping="Wrap"
+                   Text="2. When the page finishes loading a mostly blank &quot;on_login_success&quot; page, copy that page's full URL from the address bar and paste it below. Your password is never seen by this app."/>
+        <TextBox x:Name="CodeBox" Margin="0,8,0,0" TextChanged="CodeBox_TextChanged"/>
+        <TextBlock x:Name="MessageText" Foreground="#8F99AA" TextWrapping="Wrap" Margin="2,6,0,0"
+                   Text="Paste the URL (or just its code value) to continue."/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" Background="#465065" Click="Cancel_Click" IsCancel="True"/>
+            <Button x:Name="SignInButton" Content="Sign in" IsEnabled="False" IsDefault="True" Click="SignIn_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

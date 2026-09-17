@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 namespace GogDisc.Core;
 
@@ -18,6 +19,11 @@ public sealed record MediaSuggestion(IReadOnlyList<OpticalMediaType> Discs, long
     public string Summary => string.Join(", ", Discs
         .GroupBy(disc => disc.Id)
         .Select(group => $"{group.Count()} x {group.First().DisplayName}"));
+    public int SuggestedCaseCapacity => new[] { 1, 2, 3, 4, 6, 8, 10, 12 }
+        .FirstOrDefault(capacity => capacity >= Discs.Count, Discs.Count);
+    public string ChoiceLabel =>
+        $"{Discs.Count} {(Discs.Count == 1 ? "disc" : "discs")} · fits a {SuggestedCaseCapacity}-disc case · " +
+        $"{Summary} · {UnusedBytes / 1024d / 1024d / 1024d:N2} GiB unused";
 }
 
 public static class MediaCatalog
@@ -53,6 +59,21 @@ public static class MediaCatalog
     }
 
     public static MediaSuggestion Suggest(long payloadBytes, IReadOnlyList<MediaInventoryItem> inventory)
+        => SuggestOptions(payloadBytes, inventory)[0];
+
+    public static OpticalMediaType SuggestSingle(long payloadBytes, IReadOnlyList<MediaInventoryItem> inventory)
+    {
+        if (payloadBytes < 0) throw new ArgumentOutOfRangeException(nameof(payloadBytes));
+        return inventory
+            .Where(item => item.Count > 0 && item.Media.UsableBytes >= payloadBytes)
+            .Select(item => item.Media)
+            .OrderBy(media => media.CapacityBytes)
+            .ThenBy(media => media.Id, StringComparer.Ordinal)
+            .FirstOrDefault()
+            ?? throw new InvalidDataException("No single disc in your inventory has enough usable capacity for this collection.");
+    }
+
+    public static IReadOnlyList<MediaSuggestion> SuggestOptions(long payloadBytes, IReadOnlyList<MediaInventoryItem> inventory)
     {
         if (payloadBytes < 0) throw new ArgumentOutOfRangeException(nameof(payloadBytes));
         var states = new Dictionary<long, List<OpticalMediaType>> { [0] = [] };
@@ -70,18 +91,28 @@ public static class MediaCatalog
             }
         }
 
-        var best = states.Where(state => state.Key >= payloadBytes)
-            .Select(state => state.Value)
-            .OrderBy(discs => discs.Sum(disc => disc.CapacityBytes))
-            .ThenBy(discs => discs.Count)
-            .ThenBy(discs => discs.Sum(disc => disc.UsableBytes) - payloadBytes)
-            .FirstOrDefault() ?? throw new InvalidDataException("The available media does not have enough usable capacity for this package.");
-        return new MediaSuggestion(best.OrderByDescending(disc => disc.CapacityBytes).ToList(), payloadBytes);
+        var candidates = states.Where(state => state.Key >= payloadBytes)
+            .Select(state => state.Value.OrderByDescending(disc => disc.CapacityBytes).ToList())
+            // Exclude padded layouts: every listed disc must actually be needed when the planner fills them in order.
+            .Where(discs => discs.Count == 1 || discs.Take(discs.Count - 1).Sum(disc => disc.UsableBytes) < payloadBytes)
+            .GroupBy(discs => discs.Count)
+            .OrderBy(group => group.Key)
+            .Select(group => group
+                .OrderBy(discs => discs.Sum(disc => disc.CapacityBytes))
+                .ThenBy(discs => discs.Sum(disc => disc.UsableBytes) - payloadBytes)
+                .First())
+            .Take(5)
+            .Select(discs => new MediaSuggestion(discs, payloadBytes))
+            .ToList();
+        return candidates.Count > 0
+            ? candidates
+            : throw new InvalidDataException("The available media does not have enough usable capacity for this package.");
     }
 
     private static bool IsBetter(IReadOnlyList<OpticalMediaType> candidate, IReadOnlyList<OpticalMediaType> existing) =>
-        candidate.Sum(disc => disc.CapacityBytes) < existing.Sum(disc => disc.CapacityBytes) ||
-        candidate.Sum(disc => disc.CapacityBytes) == existing.Sum(disc => disc.CapacityBytes) && candidate.Count < existing.Count;
+        candidate.Count < existing.Count ||
+        candidate.Count == existing.Count &&
+        candidate.Sum(disc => disc.CapacityBytes) < existing.Sum(disc => disc.CapacityBytes);
 
     private static OpticalMediaType? Find(string value)
     {
@@ -98,5 +129,57 @@ public static class MediaCatalog
             "BD128" or "BDXL128" => Bd128,
             _ => null
         };
+    }
+}
+
+/// <summary>Persists the user's blank-media supply independently of any one package.</summary>
+public static class MediaInventoryStore
+{
+    public static string DefaultPath => GetPath(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+    /// <summary>The path deliberately contains no app or assembly version, so installing an update keeps the same collection.</summary>
+    public static string GetPath(string localApplicationData) =>
+        Path.Combine(localApplicationData, "GOG Disc Packager", "media-inventory.json");
+
+    public static IReadOnlyList<MediaInventoryItem> Consume(
+        IReadOnlyList<MediaInventoryItem> inventory, IEnumerable<OpticalMediaType> usedMedia)
+    {
+        var used = usedMedia.GroupBy(media => media.Id).ToDictionary(group => group.Key, group => group.Count());
+        var available = inventory.ToDictionary(item => item.Media.Id, item => item);
+        foreach (var entry in used)
+            if (!available.TryGetValue(entry.Key, out var item) || entry.Value > item.Count)
+                throw new InvalidOperationException($"There are not enough {entry.Key} blanks in inventory.");
+        return inventory.Select(item => new MediaInventoryItem(
+                item.Media, item.Count - used.GetValueOrDefault(item.Media.Id)))
+            .Where(item => item.Count > 0)
+            .ToList();
+    }
+
+    public static IReadOnlyList<MediaInventoryItem> Load(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return [];
+            var saved = JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(path)) ?? [];
+            return MediaCatalog.All
+                .Where(media => saved.TryGetValue(media.Id, out var count) && count > 0)
+                .Select(media => new MediaInventoryItem(media, Math.Min(saved[media.Id], 99)))
+                .ToList();
+        }
+        catch (JsonException) { return []; }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+    }
+
+    public static void Save(string path, IEnumerable<MediaInventoryItem> inventory)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        var values = inventory
+            .Where(item => item.Count > 0 && MediaCatalog.All.Any(media => media.Id == item.Media.Id))
+            .ToDictionary(item => item.Media.Id, item => Math.Clamp(item.Count, 1, 99));
+        var temporary = path + ".tmp";
+        File.WriteAllText(temporary, JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temporary, path, true);
     }
 }

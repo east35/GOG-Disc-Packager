@@ -16,9 +16,10 @@ public static class InstallDiscovery
     {
         if (!OperatingSystem.IsWindows()) return null;
         var saved = InstallStateStore.Load(package.PackageId);
-        if (saved is not null && IsUseful(saved)) return saved;
+        if (saved is not null && IsUseful(saved) && IsPlausibleForPackage(saved, package)) return saved;
 
-        var names = package.InstallDetectionNames.Append(package.Title).Where(name => !string.IsNullOrWhiteSpace(name)).Distinct().ToArray();
+        var configuredNames = package.InstallDetectionNames.Where(name => !string.IsNullOrWhiteSpace(name)).ToArray();
+        var names = (configuredNames.Length > 0 ? configuredNames : [package.Title]).Distinct().ToArray();
         foreach (var hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
         foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
         {
@@ -85,6 +86,17 @@ public static class InstallDiscovery
     private static bool IsUseful(InstallState state) =>
         (!string.IsNullOrWhiteSpace(state.PlayTarget) && File.Exists(state.PlayTarget)) ||
         (!string.IsNullOrWhiteSpace(state.UninstallCommand) && !string.IsNullOrWhiteSpace(state.InstallLocation));
+
+    private static bool IsPlausibleForPackage(InstallState state, PackageManifest package)
+    {
+        if (package.InstallDetectionNames.Count == 0) return true;
+        var location = state.InstallLocation ?? "";
+        var target = state.PlayTarget ?? "";
+        var identity = $"{location} {target}";
+        return package.InstallDetectionNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Any(name => FuzzyContains(identity, name));
+    }
 
     private static string? FindPlayTarget(string[] names, string? installLocation, string? displayIcon)
     {

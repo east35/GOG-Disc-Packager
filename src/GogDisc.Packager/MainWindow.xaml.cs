@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.ComponentModel;
 using GogDisc.Core;
 using Microsoft.Win32;
 
@@ -12,21 +13,37 @@ namespace GogDisc.Packager;
 public partial class MainWindow : Window
 {
     private SetupFamily? _family;
+    private SetupCollection? _collection;
     private PackagePlan? _plan;
     private CancellationTokenSource? _cancellation;
     private GogCatalogProduct? _resolvedGame;
     private List<GogKeyProduct>? _validatedKeyDiscs;
     private readonly List<DlcOption> _dlcs = [];
+    private readonly List<InventoryOption> _mediaInventory = [];
+    private IReadOnlyList<OpticalMediaType>? _selectedInventoryMedia;
+    private readonly string _mediaInventoryPath = MediaInventoryStore.DefaultPath;
 
     public MainWindow()
     {
         InitializeComponent();
         OutputBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "GOG Disc Packages");
         LauncherBox.Text = FindLauncher();
+        LoadMediaInventory();
+        SynchronizeMediaControls();
+        UpdateAccountStatus();
     }
 
     private void BrowseSetup_Click(object sender, RoutedEventArgs e)
     {
+        if (IsCollection)
+        {
+            BrowseFolderInto(SetupBox);
+            if (string.IsNullOrWhiteSpace(TitleBox.Text) && Directory.Exists(SetupBox.Text))
+                TitleBox.Text = Path.GetFileName(Path.TrimEndingDirectorySeparator(SetupBox.Text));
+            if (string.IsNullOrWhiteSpace(VersionBox.Text)) VersionBox.Text = "1.0";
+            ResetScan();
+            return;
+        }
         var dialog = new OpenFileDialog { Filter = "GOG setup (setup_*.exe)|setup_*.exe|Executables (*.exe)|*.exe" };
         if (dialog.ShowDialog() != true) return;
         SetupBox.Text = dialog.FileName;
@@ -70,16 +87,51 @@ public partial class MainWindow : Window
 
     private void MediaBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        SynchronizeMediaControls();
+        ResetScan();
+    }
+
+    private void SynchronizeMediaControls()
+    {
         if (CustomCapacityBox is not null)
             CustomCapacityBox.Visibility = MediaBox.SelectedIndex == 9 ? Visibility.Visible : Visibility.Collapsed;
         if (CustomCapacityLabel is not null)
             CustomCapacityLabel.Visibility = MediaBox.SelectedIndex == 9 ? Visibility.Visible : Visibility.Collapsed;
         if (MixedMediaPanel is not null)
             MixedMediaPanel.Visibility = MediaBox.SelectedIndex == 8 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void LoadMediaInventory()
+    {
+        var saved = MediaInventoryStore.Load(_mediaInventoryPath).ToDictionary(item => item.Media.Id, item => item.Count);
+        foreach (var media in MediaCatalog.All)
+            _mediaInventory.Add(new InventoryOption(media, saved.GetValueOrDefault(media.Id)));
+        UpdateInventorySummary();
+    }
+
+    private void ManageInventory_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new MediaInventoryWindow(_mediaInventory) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        SetMediaInventory(dialog.Inventory);
+        SaveMediaInventory();
         ResetScan();
     }
 
-    private void MediaInventoryBox_TextChanged(object sender, TextChangedEventArgs e) => ResetScan();
+    private List<MediaInventoryItem> GetMediaInventory() => _mediaInventory
+        .Where(option => option.Count > 0)
+        .Select(option => new MediaInventoryItem(option.Media, option.Count))
+        .ToList();
+
+    private void UpdateInventorySummary()
+    {
+        if (InventorySummaryText is null) return;
+        var count = _mediaInventory.Sum(option => option.Count);
+        var usable = _mediaInventory.Sum(option => option.Count * option.Media.UsableBytes);
+        InventorySummaryText.Text = count == 0
+            ? "No blank discs recorded yet."
+            : $"{count} blank disc(s) · {FormatBytes(usable)} total usable capacity";
+    }
 
     private void GameLookupBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -94,11 +146,20 @@ public partial class MainWindow : Window
         {
             // The public catalog lists bundle SKUs that carry no build and omits some base games,
             // so search the account's own library — you must own a title to package it anyway.
+            // The library search needs this app's own sign-in, so offer it before falling back to the catalog.
+            if (IsKeyMedia) PromptForSignIn();
             IReadOnlyList<GogCatalogProduct> products;
             if (GogAuthentication.HasCredentials())
             {
                 StatusText.Text = "Searching your GOG library…";
-                products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None);
+                UnauthorizedAccessException? rejected = null;
+                try { products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None); }
+                catch (UnauthorizedAccessException ex) { rejected = ex; products = []; }
+                if (rejected is not null)
+                {
+                    if (!RecoverSignIn(rejected)) return;
+                    products = await new GogLibraryClient().SearchAsync(GameLookupBox.Text, CancellationToken.None);
+                }
                 if (products.Count == 0)
                     throw new InvalidOperationException(
                         $"No owned GOG game matches \"{GameLookupBox.Text.Trim()}\". Only games on your GOG account can be packaged.");
@@ -132,7 +193,7 @@ public partial class MainWindow : Window
         if (_resolvedGame is null || !IsKeyMedia) { UpdateKeyLayoutHint(); return; }
         if (!GogAuthentication.HasCredentials())
         {
-            DlcHint.Text = "Sign in to GOG to list the add-ons your account owns.";
+            DlcHint.Text = "Sign in to GOG (button above) to list the add-ons your account owns.";
             UpdateKeyLayoutHint();
             return;
         }
@@ -191,27 +252,40 @@ public partial class MainWindow : Window
 
     private const string ImageFilter = "Images|*.png;*.jpg;*.jpeg;*.bmp";
 
-    private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 1;
+    private bool IsCollection => DeploymentTypeBox.SelectedIndex == 1;
+    private bool IsKeyMedia => DeploymentTypeBox.SelectedIndex == 2;
 
     private void DeploymentTypeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (KeyIdentityPanel is null) return;
         var key = IsKeyMedia;
+        var collection = IsCollection;
+        KeyAccountPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
+        UpdateAccountStatus();
         KeyIdentityPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
         KeyDlcPanel.Visibility = key ? Visibility.Visible : Visibility.Collapsed;
         // Key Media derives the product type from each disc's role, so the picker would be a no-op there.
-        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel,
-                     ExtrasLabel, ExtrasPanel, ExtrasBrowseButton, ProductTypeLabel, ProductTypeBox })
+        foreach (var control in new FrameworkElement[] { SetupLabel, SetupBox, SetupBrowseButton, MediaLabel, MediaPanel })
             control.Visibility = key ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var control in new FrameworkElement[] { ExtrasLabel, ExtrasPanel, ExtrasBrowseButton, ProductTypeLabel, ProductTypeBox })
+            control.Visibility = key || collection ? Visibility.Collapsed : Visibility.Visible;
+        SetupLabel.Text = collection ? "Collection folder" : "GOG setup";
+        SetupBrowseButton.Content = collection ? "Choose folder…" : "Browse…";
+        CollectionFolderHint.Visibility = collection ? Visibility.Visible : Visibility.Collapsed;
         SummaryText.Text = key
             ? "Enter the durable GOG product identity. The generated media will contain no game payload or account data."
+            : collection ? "Choose a parent folder containing one subfolder per game, then scan the collection."
             : "Select a stock setup_*.exe, then scan the package.";
-        ScanButton.Content = key ? "Validate key media" : "Scan package";
-        BuildButton.Content = key ? "Build key media folder" : "Build disc folders";
+        ScanButton.Content = key ? "Validate Game-Key Disc" : collection ? "Scan collection" : "Scan package";
+        BuildButton.Content = key ? "Build Game-Key Disc folder" : collection ? "Build collection disc" : "Build disc folders";
         ResetScan();
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanPackageAsync();
+    private async void Scan_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedInventoryMedia = null;
+        await ScanPackageAsync();
+    }
 
     private async Task<bool> ScanPackageAsync()
     {
@@ -227,15 +301,59 @@ public partial class MainWindow : Window
                 BuildButton.IsEnabled = true;
                 return true;
             }
+            if (IsCollection)
+            {
+                _family = null;
+                _plan = null;
+                _collection = SetupCollectionScanner.Scan(SetupBox.Text);
+                OpticalMediaType? inventoryMedia = null;
+                if (MediaBox.SelectedIndex == 8)
+                {
+                    var inventory = GetMediaInventory();
+                    if (inventory.Count == 0)
+                        throw new InvalidOperationException("Add at least one blank disc to your inventory.");
+                    inventoryMedia = MediaCatalog.SuggestSingle(_collection.TotalBytes, inventory);
+                    _selectedInventoryMedia = [inventoryMedia];
+                }
+                var capacity = inventoryMedia?.CapacityBytes ?? GetCapacity();
+                var reserve = inventoryMedia?.ReserveBytes ?? GetReserve();
+                if (_collection.TotalBytes + reserve > capacity)
+                    throw new InvalidDataException($"The collection payload plus safety reserve is {FormatBytes(_collection.TotalBytes + reserve)}, larger than the selected {FormatBytes(capacity)} disc.");
+                SummaryText.Text =
+                    $"{_collection.Games.Count} games, {FormatBytes(_collection.TotalBytes)}\n" +
+                    $"One {(inventoryMedia?.DisplayName ?? "disc")}; {FormatBytes(capacity - reserve - _collection.TotalBytes)} usable space remains\n\n" +
+                    string.Join("\n", _collection.Games.Select(game => $"• {game.Title} ({FormatBytes(game.Family.InstallerBytes)})"));
+                Log($"Scanned collection with {_collection.Games.Count} games.");
+                BuildButton.IsEnabled = true;
+                StatusText.Text = "Collection plan is valid";
+                return true;
+            }
             _family = SetupFamilyScanner.Scan(SetupBox.Text, EmptyToNull(ExtrasBox.Text), IncludePatchesBox.IsChecked == true);
             string? economySuggestion = null;
             if (MediaBox.SelectedIndex == 8)
             {
-                var inventory = MediaCatalog.ParseInventory(MediaInventoryBox.Text);
-                var suggestion = MediaCatalog.Suggest(_family.InstallerBytes + _family.ExtrasBytes, inventory);
+                var inventory = GetMediaInventory();
+                if (inventory.Count == 0)
+                    throw new InvalidOperationException("Add at least one blank disc to your inventory.");
+                var suggestions = MediaCatalog.SuggestOptions(_family.InstallerBytes + _family.ExtrasBytes, inventory);
+                var cachedSuggestion = _selectedInventoryMedia is null ? null : suggestions.FirstOrDefault(option =>
+                    option.Discs.Select(disc => disc.Id).SequenceEqual(_selectedInventoryMedia.Select(disc => disc.Id)));
+                var suggestion = cachedSuggestion ?? suggestions[0];
+                if (cachedSuggestion is null && suggestions.Count > 1)
+                {
+                    var picker = new DiscPlanWindow(suggestions) { Owner = this };
+                    if (picker.ShowDialog() != true)
+                    {
+                        ResetScan();
+                        StatusText.Text = "Disc layout selection cancelled";
+                        return false;
+                    }
+                    suggestion = picker.SelectedSuggestion;
+                }
+                _selectedInventoryMedia = suggestion.Discs;
                 _plan = DiscPlanner.CreateMixed(_family, suggestion.Discs);
                 economySuggestion =
-                    $"Economy suggestion: {suggestion.Summary}\n" +
+                    $"Chosen inventory layout: {suggestion.Summary}\n" +
                     $"Combined usable space: {FormatBytes(suggestion.UsableBytes)}; unused: {FormatBytes(suggestion.UnusedBytes)}\n";
             }
             else
@@ -275,19 +393,24 @@ public partial class MainWindow : Window
                       $"Platform/language: {product.Platform}/{product.Language}\n" +
                       $"Layout: {(split ? $"{discs.Count} disc(s), one per product" : "one disc")}\n\n";
 
+        // Validation is the last gate before media is burned, so ask for the sign-in rather than skipping the check.
+        if (!GogAuthentication.HasCredentials()) PromptForSignIn();
         if (!GogAuthentication.HasCredentials())
         {
             _validatedKeyDiscs = discs;
             SummaryText.Text = heading + "Not signed in to GOG, so this product could not be checked.\n" +
-                "Sign in and validate again before burning — some store SKUs carry no installable build.";
+                "This app signs in separately from GOG Galaxy and the GOG website — use \"Sign in to GOG\" above,\n" +
+                "then validate again before burning, because some store SKUs carry no installable build.";
             StatusText.Text = "Key Media identity is valid, but unverified";
             return true;
         }
 
         StatusText.Text = "Checking what GOG can deliver for this product…";
+        var token = _cancellation?.Token ?? CancellationToken.None;
         GogKeyAvailability availability;
-        try { availability = await GogKeyAvailability.ProbeAsync(product, _cancellation?.Token ?? CancellationToken.None); }
+        try { availability = await ProbeWithSignInRecoveryAsync(product, token); }
         catch (OperationCanceledException) { throw; }
+        catch (SignInDeclinedException) { ResetScan(); StatusText.Text = "Validation cancelled"; return false; }
         catch (Exception ex) { ResetScan(); ShowError(ex.Message); return false; }
 
         foreach (var disc in discs)
@@ -399,6 +522,27 @@ public partial class MainWindow : Window
                 BuildProgress.Value = value.Percent;
                 StatusText.Text = $"{value.Activity}: {value.CurrentFile}";
             });
+            if (IsCollection)
+            {
+                var inventoryMedia = MediaBox.SelectedIndex == 8 ? _selectedInventoryMedia?.SingleOrDefault() : null;
+                var capacity = inventoryMedia?.CapacityBytes ?? GetCapacity();
+                var collectionResult = await CollectionBuilder.BuildAsync(new CollectionBuildRequest
+                {
+                    Title = TitleBox.Text,
+                    Version = VersionBox.Text,
+                    Collection = _collection!,
+                    CapacityBytes = capacity,
+                    ReserveBytes = inventoryMedia?.ReserveBytes ?? GetReserve(),
+                    MediaName = inventoryMedia?.DisplayName ?? $"{capacity / 1_000_000_000d:0.###} GB media",
+                    OutputDirectory = OutputBox.Text,
+                    LauncherExecutable = LauncherBox.Text,
+                    BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                    CoverImage = EmptyToNull(CoverBox.Text),
+                    IconImage = preparedIcon
+                }, progress, _cancellation.Token);
+                CompleteBuild(collectionResult);
+                return;
+            }
             var result = await PackageBuilder.BuildAsync(new PackageBuildRequest
             {
                 Title = TitleBox.Text,
@@ -437,7 +581,7 @@ public partial class MainWindow : Window
     private void SetBusy(bool busy)
     {
         ScanButton.IsEnabled = !busy;
-        BuildButton.IsEnabled = !busy && _plan is not null;
+        BuildButton.IsEnabled = !busy && (_plan is not null || _collection is not null || _validatedKeyDiscs is not null);
         CancelButton.IsEnabled = busy;
     }
 
@@ -445,7 +589,9 @@ public partial class MainWindow : Window
     {
         _family = null;
         _plan = null;
+        _collection = null;
         _validatedKeyDiscs = null;
+        _selectedInventoryMedia = null;
         if (BuildButton is not null) BuildButton.IsEnabled = false;
     }
 
@@ -466,10 +612,42 @@ public partial class MainWindow : Window
     {
         Log($"Complete: {result.PackageDirectory}");
         StatusText.Text = IsKeyMedia ? "Key Media folder built" : "Disc folders built and verified";
+        OfferInventoryDeduction();
         MessageBox.Show(this, $"Physical-media folder is ready:\n\n{result.PackageDirectory}", "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);
         if (OpenWhenCompleteBox.IsChecked == true)
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{result.PackageDirectory}\"") { UseShellExecute = true });
         if (ResetAfterBuildBox.IsChecked == true) ClearBackupInputs();
+    }
+
+    private void OfferInventoryDeduction()
+    {
+        if (_selectedInventoryMedia is null || _selectedInventoryMedia.Count == 0) return;
+        var used = _selectedInventoryMedia.GroupBy(media => media.Id)
+            .Select(group => $"{group.Count()} x {group.First().DisplayName}");
+        var message = "Remove these discs from your blank-media inventory?\n\n" + string.Join("\n", used) +
+                      "\n\nChoose No if you have only created the folders and have not committed these blanks yet.";
+        if (MessageBox.Show(this, message, "Update disc inventory", MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        SetMediaInventory(MediaInventoryStore.Consume(GetMediaInventory(), _selectedInventoryMedia));
+        SaveMediaInventory();
+        Log("Removed the selected blanks from disc inventory.");
+    }
+
+    private void SetMediaInventory(IEnumerable<MediaInventoryItem> inventory)
+    {
+        var counts = inventory.ToDictionary(item => item.Media.Id, item => item.Count);
+        foreach (var option in _mediaInventory) option.Count = counts.GetValueOrDefault(option.Media.Id);
+        UpdateInventorySummary();
+    }
+
+    private void SaveMediaInventory()
+    {
+        try { MediaInventoryStore.Save(_mediaInventoryPath, GetMediaInventory()); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ShowError("Your disc inventory could not be saved: " + ex.Message);
+        }
     }
 
     private void ClearBackupInputs()
@@ -543,10 +721,109 @@ public partial class MainWindow : Window
         LogBox.ScrollToEnd();
     }
 
+    /// <summary>Probes GOG, giving a rejected sign-in one chance to be replaced before failing.</summary>
+    private async Task<GogKeyAvailability> ProbeWithSignInRecoveryAsync(GogKeyProduct product, CancellationToken cancellationToken)
+    {
+        try { return await GogKeyAvailability.ProbeAsync(product, cancellationToken); }
+        catch (UnauthorizedAccessException ex)
+        {
+            if (!RecoverSignIn(ex)) throw new SignInDeclinedException();
+            return await GogKeyAvailability.ProbeAsync(product, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Handles GOG rejecting a credential that looked fine on disk — a password change revokes it.
+    /// Core has already discarded it, so this just explains what happened and collects a new sign-in.
+    /// Returns true when the caller should retry.
+    /// </summary>
+    private bool RecoverSignIn(UnauthorizedAccessException rejection)
+    {
+        Log("GOG rejected the saved sign-in: " + rejection.Message);
+        UpdateAccountStatus();
+        MessageBox.Show(this, rejection.Message, "GOG Disc Packager", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return PromptForSignIn();
+    }
+
+    private async void SignInGog_Click(object sender, RoutedEventArgs e)
+    {
+        if (GogAuthentication.HasCredentials())
+        {
+            SignOutOfGog();
+            return;
+        }
+        // A fresh sign-in can reveal add-ons the unsigned form could not list.
+        if (PromptForSignIn() && _resolvedGame is not null) await LoadOwnedDlcsAsync();
+    }
+
+    /// <summary>
+    /// Discards the stored sign-in. The listed add-ons and any validation came from that account,
+    /// so they go with it rather than lingering as stale account-derived state.
+    /// </summary>
+    private void SignOutOfGog()
+    {
+        // Signing out is cheap to undo, but the add-on selections and disc art chosen against this
+        // account are not, so only ask when there is actually something to lose.
+        if ((_dlcs.Count > 0 || _validatedKeyDiscs is not null) &&
+            MessageBox.Show(this, "Sign out of GOG? The listed add-ons and this validation will be cleared.",
+                "GOG Disc Packager", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+        GogAuthentication.ClearCredentials();
+        _dlcs.Clear();
+        DlcList.ItemsSource = null;
+        DlcHint.Text = "Sign in to GOG (button above) to list the add-ons your account owns.";
+        UpdateAccountStatus();
+        UpdateKeyLayoutHint();
+        ResetScan();
+        Log("Signed out of GOG.");
+        StatusText.Text = "Signed out of GOG";
+    }
+
+    /// <summary>
+    /// Shows the packager's own GOG sign-in. Returns true once credentials exist, whether this
+    /// call created them or they were already there.
+    /// </summary>
+    private bool PromptForSignIn()
+    {
+        if (GogAuthentication.HasCredentials()) { UpdateAccountStatus(); return true; }
+        var dialog = new GogSignInWindow { Owner = this };
+        var signedIn = dialog.ShowDialog() == true;
+        UpdateAccountStatus();
+        if (signedIn) Log("Signed in to GOG.");
+        return signedIn;
+    }
+
+    private void UpdateAccountStatus()
+    {
+        if (AccountStatusText is null) return;
+        var signedIn = GogAuthentication.HasCredentials();
+        AccountStatusText.Text = signedIn
+            ? "Signed in. Key Media validation can check what GOG will deliver for this product."
+            : "Not signed in. This app signs in separately from GOG Galaxy and the GOG website.";
+        AccountSignInButton.Content = signedIn ? "Sign out" : "Sign in to GOG…";
+    }
+
     private void ShowError(string message)
     {
         Log("ERROR: " + message);
         StatusText.Text = "Error";
         MessageBox.Show(this, message, "GOG Disc Packager", MessageBoxButton.OK, MessageBoxImage.Error);
     }
+}
+
+public sealed class InventoryOption(OpticalMediaType media, int count) : INotifyPropertyChanged
+{
+    private int _count = count;
+    public OpticalMediaType Media { get; } = media;
+    public int Count
+    {
+        get => _count;
+        set
+        {
+            if (_count == value) return;
+            _count = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
+        }
+    }
+    public event PropertyChangedEventHandler? PropertyChanged;
 }

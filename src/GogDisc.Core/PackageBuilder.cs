@@ -47,7 +47,7 @@ public static class PackageBuilder
             var discDirectories = new Dictionary<int, string>();
             foreach (var disc in request.Plan.Discs)
             {
-                var discRoot = Path.Combine(buildRoot, $"Disc {disc.Number:00} of {request.Plan.Discs.Count:00}");
+                var discRoot = Path.Combine(buildRoot, DiscFolderName(request.Title, disc.Number, request.Plan.Discs.Count));
                 Directory.CreateDirectory(discRoot);
                 discDirectories[disc.Number] = discRoot;
                 File.Copy(request.LauncherExecutable, Path.Combine(discRoot, "Launch.exe"), true);
@@ -193,10 +193,14 @@ public static class PackageBuilder
         $"{manifest.TotalDiscCount} burn-ready disc folder(s){Environment.NewLine}{Environment.NewLine}" +
         "Disc layout:\r\n" +
         string.Join("\r\n", manifest.DiscLayout.Select(disc => $"  Disc {disc.DiscNumber:00}: {disc.MediaName}")) + "\r\n\r\n" +
-        "Burn the CONTENTS of each Disc folder to its own disc using UDF 2.50 or later.\r\n" +
+        "Burn the CONTENTS of each disc folder to its own disc using UDF 2.50 or later.\r\n" +
         "Use a distinct volume label ending in the disc number, and enable your burning software's verify-after-write option.\r\n" +
         "Keep Launch.exe, package.json, disc.json, autorun.inf, game.ico, artwork, Payload, and Extras at the disc root.\r\n" +
         "Windows may ignore AutoRun; in that case, open the disc and run Launch.exe manually.\r\n";
+
+    /// <summary>Names a burn-ready disc folder after the game; only a multi-disc set adds the disc number.</summary>
+    public static string DiscFolderName(string title, int discNumber, int discCount) =>
+        SanitizeFileName(discCount > 1 ? $"{title.Trim()} - Disc {discNumber}" : title.Trim());
 
     public static string SanitizeFileName(string value)
     {

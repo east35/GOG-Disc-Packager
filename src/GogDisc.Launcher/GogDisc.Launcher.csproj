@@ -14,5 +14,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\GogDisc.Core\GogDisc.Core.csproj" />
+    <Resource Include="Assets\DefaultBackground.png" />
+    <Resource Include="Assets\DefaultCover.png" />
+    <Resource Include="Assets\DefaultIcon.png" />
   </ItemGroup>
 </Project>

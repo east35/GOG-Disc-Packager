@@ -1,5 +1,14 @@
 using GogDisc.Core;
 
+if (args.Length >= 2 && args[0].Equals("--inspect-collection", StringComparison.OrdinalIgnoreCase))
+{
+    var collection = SetupCollectionScanner.Scan(args[1]);
+    Console.WriteLine($"Collection: {collection.Games.Count} games ({collection.TotalBytes / 1024d / 1024d / 1024d:N2} GiB)");
+    foreach (var game in collection.Games)
+        Console.WriteLine($"  {game.Title}: {game.Family.InstallerFiles.Count} installer file(s), {game.Family.Extras.Count} extra(s), {(game.Family.InstallerBytes + game.Family.ExtrasBytes) / 1024d / 1024d:N1} MiB");
+    return 0;
+}
+
 if (args.Length >= 2 && args[0].Equals("--inspect", StringComparison.OrdinalIgnoreCase))
 {
     var extras = args.Length >= 3 && Directory.Exists(args[2]) ? args[2] : null;
@@ -34,7 +43,7 @@ if (args.Length >= 2 && args[0].Equals("--launcher-smoke", StringComparison.Ordi
         OutputDirectory = fixture.Directory("output"),
         LauncherExecutable = args[1]
     });
-    var disc = Path.Combine(result.PackageDirectory, "Disc 01 of 01");
+    var disc = Path.Combine(result.PackageDirectory, "Launcher Smoke Test");
     var start = new System.Diagnostics.ProcessStartInfo(args[1]) { UseShellExecute = false };
     start.ArgumentList.Add("--self-test");
     start.ArgumentList.Add("--disc-root");
@@ -49,8 +58,11 @@ if (args.Length >= 2 && args[0].Equals("--launcher-smoke", StringComparison.Ordi
 var failures = new List<string>();
 await Run("Natural sorting", TestNaturalSorting);
 await Run("Setup family scanning", TestSetupScanning);
+await Run("Offline collection package", TestOfflineCollection);
 await Run("Disc allocation", TestDiscAllocation);
 await Run("Mixed media economy", TestMixedMediaEconomy);
+await Run("Media inventory persistence", TestMediaInventoryPersistence);
+await Run("Single-disc inventory selection", TestSingleDiscInventorySelection);
 await Run("Package build and staging", TestBuildAndStage);
 await Run("Disc swap waits for the drive", TestDriveSettle);
 await Run("Path traversal rejection", TestPathSafety);
@@ -111,6 +123,60 @@ Task TestSetupScanning()
     return Task.CompletedTask;
 }
 
+async Task TestOfflineCollection()
+{
+    Equal("planescape torment enhanced edition", SetupNameParser.InferTitle("setup_planescape_torment_enhanced_edition_3.1.4.0_(26531).exe"));
+    Equal("7 billion humans", SetupNameParser.InferTitle("setup_7_billion_humans_1.0_(12345).exe"));
+    Equal("Planescape Torment Enhanced Edition", SetupNameParser.CollectionGameTitle(
+        "Planescape Torment", "Enhanced Edition", "setup_planescape_torment_enhanced_edition_3.1.4.0_(26531).exe"));
+    Equal("planescape torment", SetupNameParser.CollectionGameTitle(
+        "My Favorites", "Enhanced Edition", "setup_planescape_torment_3.1.4.0_(26531).exe"));
+    using var fixture = new TempFixture();
+    var collectionRoot = fixture.Directory("DOOM");
+    var first = Path.Combine(collectionRoot, "DOOM 1");
+    var second = Path.Combine(collectionRoot, "DOOM 2");
+    // Layout is a suggestion: the installer is found in any subfolder, and setups inside Extras are bonus content.
+    var firstInstaller = Path.Combine(first, "Installers", "GOG");
+    var secondBase = Path.Combine(second, "Base Game");
+    Directory.CreateDirectory(firstInstaller);
+    Directory.CreateDirectory(secondBase);
+    File.WriteAllBytes(Path.Combine(firstInstaller, "setup_doom_1.9_(1).exe"), new byte[512]);
+    File.WriteAllBytes(Path.Combine(secondBase, "setup_doom_ii_1.9_(2).exe"), new byte[640]);
+    File.WriteAllBytes(Path.Combine(secondBase, "setup_doom_ii_1.9_(2)-1.bin"), new byte[1024]);
+    var extras = Path.Combine(second, "Extras");
+    Directory.CreateDirectory(extras);
+    File.WriteAllText(Path.Combine(extras, "manual.txt"), "manual");
+    File.WriteAllBytes(Path.Combine(extras, "setup_bonus_soundtrack.exe"), new byte[64]);
+
+    var collection = SetupCollectionScanner.Scan(collectionRoot);
+    Equal(2, collection.Games.Count);
+    Equal("DOOM 1", collection.Games[0].Title);
+    var result = await CollectionBuilder.BuildAsync(new CollectionBuildRequest
+    {
+        Title = "DOOM Collection",
+        Version = "1.0",
+        Collection = collection,
+        CapacityBytes = 10_000,
+        ReserveBytes = 256,
+        MediaName = "Test media",
+        OutputDirectory = fixture.Directory("output"),
+        LauncherExecutable = fixture.File("Launch.exe", 128)
+    });
+
+    var discRoot = Path.Combine(result.PackageDirectory, "DOOM Collection");
+    var media = DiscMedia.Load(discRoot);
+    Equal(2, media.Package.CollectionGames.Count);
+    Equal("DOOM 1", media.Package.CollectionGames[0].InstallDetectionNames.Single());
+    Equal("DOOM 2", media.Package.CollectionGames[1].InstallDetectionNames.Single());
+    Equal(4, media.Package.Files.Count);
+    True(File.Exists(Path.Combine(discRoot, media.Package.CollectionGames[1].InstallerRelativePath)),
+        "A collection game installer was not packaged.");
+    True(File.Exists(Path.Combine(discRoot, media.Package.CollectionGames[1].ExtrasRelativePath, "manual.txt")),
+        "Per-game extras were not packaged.");
+    True(media.Package.CollectionGames.Select(game => game.GameId).Distinct().Count() == 2,
+        "Collection games did not receive distinct install-state identities.");
+}
+
 Task TestDiscAllocation()
 {
     Equal(700_000_000L, DiscPlanner.CdCapacityBytes);
@@ -165,6 +231,18 @@ Task TestMixedMediaEconomy()
     Equal("BD50", suggestion.Discs[0].Id);
     Equal("BD25", suggestion.Discs[1].Id);
 
+    // Five smaller discs have less nominal capacity, but two burns are the more economical choice.
+    var dvdInventory = MediaCatalog.ParseInventory("DVD9 x2, DVD5 x1, CD700 x3");
+    var dvdSuggestion = MediaCatalog.Suggest(14_000_000_000L, dvdInventory);
+    Equal(2, dvdSuggestion.Discs.Count);
+    True(dvdSuggestion.Discs.All(disc => disc.Id == "DVD9"),
+        "The optimizer preferred five smaller discs over two DVD-9 discs.");
+    var dvdOptions = MediaCatalog.SuggestOptions(14_000_000_000L, dvdInventory);
+    True(dvdOptions.Any(option => option.Discs.Count == 5),
+        "The five-disc capacity-saving alternative was not offered to the user.");
+    Equal(2, dvdOptions.Single(option => option.Discs.Count == 2).SuggestedCaseCapacity);
+    Equal(6, dvdOptions.Single(option => option.Discs.Count == 5).SuggestedCaseCapacity);
+
     var family = new SetupFamily
     {
         SetupExecutable = "setup.exe",
@@ -183,6 +261,30 @@ Task TestMixedMediaEconomy()
     Equal("Big disc", plan.Discs[0].MediaName);
     Equal("Small disc", plan.Discs[1].MediaName);
     True(plan.Discs.SelectMany(disc => disc.Files).All(file => file.PartCount == 2), "Mixed-media file was not split across both discs.");
+    return Task.CompletedTask;
+}
+
+Task TestMediaInventoryPersistence()
+{
+    using var fixture = new TempFixture();
+    Equal(Path.Combine("profile", "GOG Disc Packager", "media-inventory.json"),
+        MediaInventoryStore.GetPath("profile"));
+    var path = Path.Combine(fixture.Root, "settings", "media-inventory.json");
+    MediaInventoryStore.Save(path,
+    [
+        new MediaInventoryItem(MediaCatalog.Dvd9, 3),
+        new MediaInventoryItem(MediaCatalog.Bd25, 7),
+        new MediaInventoryItem(MediaCatalog.Cd700, 0)
+    ]);
+    var loaded = MediaInventoryStore.Load(path);
+    Equal(2, loaded.Count);
+    Equal(3, loaded.Single(item => item.Media.Id == "DVD9").Count);
+    Equal(7, loaded.Single(item => item.Media.Id == "BD25").Count);
+    var remaining = MediaInventoryStore.Consume(loaded, [MediaCatalog.Dvd9, MediaCatalog.Bd25, MediaCatalog.Bd25]);
+    Equal(2, remaining.Single(item => item.Media.Id == "DVD9").Count);
+    Equal(5, remaining.Single(item => item.Media.Id == "BD25").Count);
+    File.WriteAllText(path, "not json");
+    Equal(0, MediaInventoryStore.Load(path).Count);
     return Task.CompletedTask;
 }
 
@@ -212,13 +314,13 @@ async Task TestBuildAndStage()
     });
     Equal(2, result.Manifest.RequiredDiscCount);
     Equal(2, result.Manifest.DiscLayout.Count);
-    var discOne = Path.Combine(result.PackageDirectory, "Disc 01 of 02");
+    var discOne = Path.Combine(result.PackageDirectory, "Tiny Game - Disc 1");
     var media = DiscMedia.Load(discOne);
     var staging = fixture.Directory("staging");
     var state = StagingStateStore.LoadOrCreate(staging, result.Manifest);
     await StagingCopier.CopyDiscAsync(media, staging, state, null, CancellationToken.None);
     True(File.Exists(Path.Combine(staging, "setup_tiny_1.0_(1).exe")), "Setup was not staged.");
-    var discTwo = Path.Combine(result.PackageDirectory, "Disc 02 of 02");
+    var discTwo = Path.Combine(result.PackageDirectory, "Tiny Game - Disc 2");
     await StagingCopier.CopyDiscAsync(DiscMedia.Load(discTwo), staging, state, null, CancellationToken.None);
     Equal(2048L, new FileInfo(Path.Combine(staging, "setup_tiny_1.0_(1)-2.bin")).Length);
     True(result.Manifest.Files.Any(file => file.PartCount > 1), "Oversized file was not split across discs.");
@@ -253,14 +355,14 @@ async Task TestDriveSettle()
         CoverImage = fixture.File("cover.png", 96)
     });
 
-    var discTwo = DiscMedia.Load(Path.Combine(result.PackageDirectory, "Disc 02 of 02"));
+    var discTwo = DiscMedia.Load(Path.Combine(result.PackageDirectory, "Tiny Game - Disc 2"));
     var entry = discTwo.Disc.Files.First(file => file.Kind == PackageFileKind.Installer);
     var payload = SafePaths.ResolveUnderRoot(discTwo.Root, entry.DiscPath);
     var unreadable = payload + ".spinning-up";
 
     var staging = fixture.Directory("staging");
     var state = StagingStateStore.LoadOrCreate(staging, result.Manifest);
-    await StagingCopier.CopyDiscAsync(DiscMedia.Load(Path.Combine(result.PackageDirectory, "Disc 01 of 02")),
+    await StagingCopier.CopyDiscAsync(DiscMedia.Load(Path.Combine(result.PackageDirectory, "Tiny Game - Disc 1")),
         staging, state, null, CancellationToken.None);
 
     File.Move(payload, unreadable);
@@ -380,7 +482,7 @@ async Task TestKeyMediaPackage()
     Equal(PackageDeploymentType.GogKeyMedia, result.Manifest.DeploymentType);
     Equal("1091507383", result.Manifest.GogKeyProduct!.ProductId);
     Equal(0, result.Manifest.GogKeyProduct.AvailableExtras);
-    var mediaRoot = Path.Combine(result.PackageDirectory, "Key Media");
+    var mediaRoot = Path.Combine(result.PackageDirectory, "Test Game (Game Key)");
     var media = DiscMedia.Load(mediaRoot);
     Equal(0, media.Package.Files.Count);
     True(!Directory.Exists(Path.Combine(mediaRoot, "Payload")), "Key Media unexpectedly contains a payload folder.");
@@ -405,8 +507,8 @@ async Task TestKeyMediaDiscSet()
         LauncherExecutable = launcher
     });
 
-    var discOne = Path.Combine(result.PackageDirectory, "Disc 1 - Base Game", "Key Media");
-    var discTwo = Path.Combine(result.PackageDirectory, "Disc 2 - Story Add-On", "Key Media");
+    var discOne = Path.Combine(result.PackageDirectory, "Base Game (Game Key) - Disc 1");
+    var discTwo = Path.Combine(result.PackageDirectory, "Base Game (Game Key) - Disc 2");
     True(Directory.Exists(discOne), "Disc 1 folder was not created.");
     True(Directory.Exists(discTwo), "Disc 2 folder was not created.");
 
@@ -473,6 +575,25 @@ static void Throws<T>(Action action) where T : Exception
     try { action(); }
     catch (T) { return; }
     throw new Exception($"Expected {typeof(T).Name}.");
+}
+
+Task TestSingleDiscInventorySelection()
+{
+    var inventory = MediaCatalog.ParseInventory("BD50 x1, DVD9 x2, BD25 x1");
+    Equal("DVD9", MediaCatalog.SuggestSingle(8_000_000_000L, inventory).Id);
+    Equal("BD25", MediaCatalog.SuggestSingle(9_000_000_000L, inventory).Id);
+
+    try
+    {
+        MediaCatalog.SuggestSingle(60_000_000_000L, inventory);
+        throw new Exception("An oversized collection unexpectedly received a single-disc suggestion.");
+    }
+    catch (InvalidDataException ex)
+    {
+        True(ex.Message.Contains("No single disc", StringComparison.Ordinal),
+            "The single-disc inventory failure did not explain the constraint.");
+    }
+    return Task.CompletedTask;
 }
 
 sealed class TempFixture : IDisposable

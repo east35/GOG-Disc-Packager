@@ -31,9 +31,12 @@ internal sealed class SmokeApp : Application
                 DesktopIntegration.CacheArtwork(new LoadedDisc(root, package, new DiscManifest()));
                 if (!File.ReadAllBytes(DesktopIntegration.IconPath(new LibraryGame { Package = package })).SequenceEqual(bytes))
                     throw new Exception("The cached icon was replaced during a later disc visit");
+                // Refreshing after a disc finishes can recycle a row with a null item.
+                window.ShowLibrary();
+                window.ShowPackage(new LoadedDisc(root, package, new DiscManifest { DiscNumber = 2, TotalDiscCount = 2 }));
                 using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.Width, (int)window.Height));
                 bitmap.Render(window); bitmap.Save(Output);
-                Console.WriteLine("PASS: GUI startup, packaged app icon, one-time ICO conversion/cache reuse, game window rendering");
+                Console.WriteLine("PASS: GUI startup, artwork cache reuse, library row refresh, game window rendering");
                 desktop.Shutdown(0);
             }
             catch (Exception ex) { Console.Error.WriteLine(ex); desktop.Shutdown(1); }
