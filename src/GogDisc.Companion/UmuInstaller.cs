@@ -4,7 +4,7 @@ namespace GogDisc.Companion;
 
 internal static class UmuInstaller
 {
-    public static bool IsAvailable => FindOnPath("umu-run") is not null;
+    public static bool IsAvailable => FindRunner() is not null;
 
     public static string? ExistingRuntime(LibraryGame game)
     {
@@ -21,8 +21,8 @@ internal static class UmuInstaller
 
     public static async Task<int> RunAsync(LibraryGame game, string target, string phase, CancellationToken cancellationToken)
     {
-        var executable = FindOnPath("umu-run") ??
-            throw new FileNotFoundException("umu-run is not installed. Install umu-launcher and try again.");
+        var executable = FindRunner() ??
+            throw new FileNotFoundException("umu-run is missing from this companion build. Reinstall the complete app package.");
         var prefix = CompanionPaths.PrefixRoot(game.Package.PackageId);
         Directory.CreateDirectory(prefix);
         var runtime = ExistingRuntime(game);
@@ -75,4 +75,10 @@ internal static class UmuInstaller
     private static string? FindOnPath(string name) =>
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
         .Select(directory => Path.Combine(directory, name)).FirstOrDefault(File.Exists);
+
+    private static string? FindRunner()
+    {
+        var bundled = Path.Combine(AppContext.BaseDirectory, "umu", "umu-run");
+        return File.Exists(bundled) ? bundled : FindOnPath("umu-run");
+    }
 }

@@ -20,7 +20,8 @@ logins.
 Maintainers build with `./publish-linux.sh`. The script uses a .NET 8 SDK or the
 SDK container through Podman, and produces a self-contained Linux x64 directory
 plus `artifacts/gog-disc-companion-linux-x64-preview.tar.gz` and its SHA-256 file.
-Dependencies are umu-launcher, the graphical desktop libraries
+The Linux package includes a pinned umu-launcher zipapp for running Windows
+installers and games through Proton. Other dependencies are the graphical desktop libraries
 required by Avalonia, Python 3 for desktop-entry installation, and `xdg-open` /
 `xdg-user-dir` for folders and desktop shortcuts. Runtime provisioning may need
 network access. The companion never needs root.
