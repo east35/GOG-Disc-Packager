@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text;
+using System.Text.RegularExpressions;
 using GogDisc.Core;
 
 namespace GogDisc.Companion;
@@ -72,6 +74,37 @@ internal static class LibraryStore
           .Where(p => !Path.GetFileName(p).StartsWith("unins", StringComparison.OrdinalIgnoreCase))
           .Where(p => !Path.GetFileName(p).StartsWith("setup", StringComparison.OrdinalIgnoreCase))
           .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public static string? DetectPlayTarget(LibraryGame game)
+    {
+        var candidates = Executables(game).ToArray();
+        if (candidates.Length == 0) return null;
+        var prefix = CompanionPaths.PrefixRoot(game.Package.PackageId);
+        var drive = Path.Combine(prefix, "drive_c");
+        if (game.GameDirectory is null && Directory.Exists(drive))
+        {
+            var links = Directory.EnumerateFiles(drive, "*.lnk", new EnumerationOptions
+            { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint })
+                .Where(path => !Regex.IsMatch(Path.GetFileName(path), "uninstall|safe mode|readme|manual|register", RegexOptions.IgnoreCase))
+                .OrderBy(path => path.Contains("/Desktop/", StringComparison.OrdinalIgnoreCase) ? 0 : 1);
+            foreach (var link in links)
+            {
+                byte[] bytes;
+                try { bytes = File.ReadAllBytes(link); }
+                catch (IOException) { continue; }
+                catch (UnauthorizedAccessException) { continue; }
+                foreach (var content in new[] { Encoding.Unicode.GetString(bytes), Encoding.Latin1.GetString(bytes) })
+                foreach (Match match in Regex.Matches(content, @"[A-Za-z]:\\[^\x00-\x1F]{1,240}?\.exe", RegexOptions.IgnoreCase))
+                {
+                    var relative = match.Value[3..].Replace('\\', Path.DirectorySeparatorChar);
+                    var target = Path.Combine(drive, relative);
+                    if (!candidates.Contains(target, StringComparer.OrdinalIgnoreCase)) continue;
+                    try { return ValidateTarget(game, target); } catch (InvalidDataException) { }
+                }
+            }
+        }
+        return candidates.Length == 1 ? ValidateTarget(game, candidates[0]) : null;
     }
 
     public static string ValidateTarget(LibraryGame game, string target)

@@ -19,7 +19,7 @@ internal sealed class CompanionWindow : Window
     private readonly ProgressBar _progress = new() { Minimum = 0, Maximum = 100, Height = 10, IsVisible = false };
     private readonly Button _install = new() { Content = "Install / resume" };
     private readonly Button _play = new() { Content = "Play" };
-    private readonly Button _target = new() { Content = "Choose game executable…" };
+    private readonly Button _target = new() { Content = "Find game launcher" };
     private readonly Button _shortcuts = new() { Content = "Create shortcuts" };
     private readonly Button _extras = new() { Content = "Open saved extras" };
     private readonly Button _saveExtras = new() { Content = "Save disc extras" };
@@ -70,7 +70,7 @@ internal sealed class CompanionWindow : Window
         _library.SelectionChanged += (_, _) => { if (!_refreshing && !IsBusy && _library.SelectedItem is LibraryGame game) SelectGame(game); };
         _install.Click += async (_, _) => await RunOperationAsync("Install", _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? InstallKeyMediaAsync : InstallAsync);
         _play.Click += async (_, _) => await RunOperationAsync("Play", PlayAsync);
-        _target.Click += async (_, _) => await RunOperationAsync("Choose executable", ChooseTargetAsync);
+        _target.Click += async (_, _) => await RunOperationAsync("Find game launcher", () => ChooseTargetAsync(manual: _game?.PlayTarget is not null));
         _shortcuts.Click += async (_, _) => await RunOperationAsync("Shortcuts", async () =>
         {
             var desktop = await ConfirmAsync("Create shortcuts", "Add an application-menu shortcut and a desktop shortcut?", "Create both");
@@ -192,7 +192,27 @@ internal sealed class CompanionWindow : Window
     private void RefreshLibrary()
     {
         _refreshing = true;
-        try { _library.ItemsSource = LibraryStore.List(); }
+        try
+        {
+            var games = LibraryStore.List();
+            foreach (var game in games.Where(game => game.PlayTarget is null &&
+                (game.Status.StartsWith("Setup finished", StringComparison.Ordinal) ||
+                 game.Status.StartsWith("Downloaded; choose", StringComparison.Ordinal))))
+            {
+                try
+                {
+                    if (LibraryStore.DetectPlayTarget(game) is not { } target) continue;
+                    game.PlayTarget = target;
+                    game.ProtonPath ??= UmuInstaller.ExistingRuntime(game);
+                    game.InstalledAt ??= DateTimeOffset.Now;
+                    game.Status = "Installed";
+                    LibraryStore.Save(game);
+                    DesktopIntegration.CreateShortcuts(game, false);
+                }
+                catch (Exception ex) { PhaseLog.Write(game.Package.PackageId, "Launcher detection", ex.Message); }
+            }
+            _library.ItemsSource = games;
+        }
         finally { _refreshing = false; }
     }
 
@@ -207,6 +227,7 @@ internal sealed class CompanionWindow : Window
         if (ready && _game!.Package.DeploymentType == PackageDeploymentType.GogKeyMedia) _saveExtras.IsEnabled = true;
         if (ready && _game!.Package.GogKeyProduct?.DiscRole == KeyDiscRole.Dlc) _target.IsEnabled = false;
         _install.Content = _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? "Download / install" : "Install / resume";
+        _target.Content = _game?.PlayTarget is null ? "Find game launcher" : "Change game launcher…";
         _saveExtras.Content = _game?.Package.DeploymentType == PackageDeploymentType.GogKeyMedia ? "Download GOG extras" : "Save disc extras";
         _choose.IsEnabled = _quit.IsEnabled = _library.IsEnabled = !IsBusy;
         _cancel.IsEnabled = IsBusy;
@@ -477,9 +498,14 @@ internal sealed class CompanionWindow : Window
         LibraryStore.Save(game); _status.Text = game.Status;
     }
 
-    private async Task ChooseTargetAsync()
+    private async Task ChooseTargetAsync(bool manual = false)
     {
         var game = _game!;
+        if (!manual && await Task.Run(() => LibraryStore.DetectPlayTarget(game), _operation!.Token) is { } detected)
+        {
+            SavePlayTarget(game, detected);
+            return;
+        }
         var candidates = await Task.Run(() => LibraryStore.Executables(game).ToArray(), _operation!.Token);
         var choice = new ComboBox { ItemsSource = candidates, SelectedIndex = candidates.Length == 1 ? 0 : -1, HorizontalAlignment = HorizontalAlignment.Stretch };
         var browse = new Button { Content = game.GameDirectory is null ? "Browse prefix…" : "Browse downloaded game…" };
@@ -495,10 +521,15 @@ internal sealed class CompanionWindow : Window
             if (files.Count > 0) { choice.ItemsSource = new[] { files[0].Path.LocalPath }; choice.SelectedIndex = 0; }
         };
         var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(new TextBlock { Text = "Confirm the executable that starts the game. Its prefix and runtime will be saved.", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "The game launcher could not be identified automatically. Choose its Windows executable.", TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(choice); panel.Children.Add(browse);
         if (!await DialogAsync("Game executable", panel, "Save game") || choice.SelectedItem is not string target) return;
         _operation!.Token.ThrowIfCancellationRequested();
+        SavePlayTarget(game, target);
+    }
+
+    private void SavePlayTarget(LibraryGame game, string target)
+    {
         game.PlayTarget = LibraryStore.ValidateTarget(game, target);
         game.ProtonPath ??= UmuInstaller.ExistingRuntime(game);
         game.InstalledAt ??= DateTimeOffset.Now; game.Status = "Installed";

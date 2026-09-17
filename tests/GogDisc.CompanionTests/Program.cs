@@ -46,6 +46,10 @@ try
     var target = Path.Combine(gameRoot, "Game.exe"); File.WriteAllText(target, "fixture");
     File.WriteAllText(Path.Combine(gameRoot, "unins000.exe"), "fixture");
     Check(LibraryStore.Executables(game).Single() == target, "Discovery excludes uninstaller and supports Unicode/spaces");
+    var desktop = Path.Combine(prefix, "drive_c", "users", "Public", "Desktop");
+    Directory.CreateDirectory(desktop);
+    File.WriteAllText(Path.Combine(desktop, "Game.lnk"), "C:\\GOG Games\\Game é\\Game.exe");
+    Check(LibraryStore.DetectPlayTarget(game) == target, "Installed game shortcut selects play target automatically");
     Check(LibraryStore.ValidateTarget(game, target) == target, "Valid target accepted");
     var outside = Path.Combine(root, "outside.exe"); File.WriteAllText(outside, "outside");
     Reject(() => LibraryStore.ValidateTarget(game, outside), "Outside-prefix target");
