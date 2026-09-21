@@ -64,6 +64,7 @@ await Run("Mixed media economy", TestMixedMediaEconomy);
 await Run("Media inventory persistence", TestMediaInventoryPersistence);
 await Run("Single-disc inventory selection", TestSingleDiscInventorySelection);
 await Run("Package build and staging", TestBuildAndStage);
+await Run("Single-disc rediscovery and validation reporting", TestSingleDiscRediscovery);
 await Run("Disc swap waits for the drive", TestDriveSettle);
 await Run("Path traversal rejection", TestPathSafety);
 await Run("Read-only runtime cache", TestReadOnlyCache);
@@ -124,6 +125,7 @@ Task TestSetupScanning()
 
 async Task TestOfflineCollection()
 {
+    Equal("fallout 3", SetupNameParser.InferTitle("setup_fallout_3_1.7.0.3_(12034).exe"));
     Equal("planescape torment enhanced edition", SetupNameParser.InferTitle("setup_planescape_torment_enhanced_edition_3.1.4.0_(26531).exe"));
     Equal("7 billion humans", SetupNameParser.InferTitle("setup_7_billion_humans_1.0_(12345).exe"));
     Equal("Planescape Torment Enhanced Edition", SetupNameParser.CollectionGameTitle(
@@ -261,6 +263,33 @@ Task TestMixedMediaEconomy()
     Equal("Small disc", plan.Discs[1].MediaName);
     True(plan.Discs.SelectMany(disc => disc.Files).All(file => file.PartCount == 2), "Mixed-media file was not split across both discs.");
     return Task.CompletedTask;
+}
+
+async Task TestSingleDiscRediscovery()
+{
+    using var fixture = new TempFixture();
+    var setup = fixture.File("setup_fallout_3_1.7.0.3_(12034).exe", 512);
+    var family = SetupFamilyScanner.Scan(setup);
+    var result = await PackageBuilder.BuildAsync(new PackageBuildRequest
+    {
+        Title = "Fallout 3",
+        Version = "1.7.0.3",
+        ProductType = PackageProductType.BaseGame,
+        SetupFamily = family,
+        Plan = DiscPlanner.Create(family, 4096, 256),
+        OutputDirectory = fixture.Directory("output"),
+        LauncherExecutable = fixture.File("Launch.exe", 128)
+    });
+    var root = Path.Combine(result.PackageDirectory, "Fallout 3");
+    True(DiscMedia.Find(result.Manifest.PackageId, 1, root) is not null,
+        "Generated single-disc media was not rediscovered.");
+
+    File.AppendAllText(Path.Combine(root, "package.json"), " ");
+    var invalid = DiscMedia.Search(result.Manifest.PackageId, 1, root);
+    True(invalid.Media is null && invalid.Failures.Count == 1,
+        "Invalid media did not report its validation failure.");
+    True(invalid.Failures[0].Message.Contains("hash", StringComparison.OrdinalIgnoreCase),
+        "Validation failure did not explain the manifest mismatch.");
 }
 
 Task TestMediaInventoryPersistence()

@@ -1,6 +1,8 @@
 namespace GogDisc.Core;
 
 public sealed record LoadedDisc(string Root, PackageManifest Package, DiscManifest Disc);
+public sealed record DiscMediaFailure(string Root, string Message);
+public sealed record DiscMediaSearchResult(LoadedDisc? Media, IReadOnlyList<DiscMediaFailure> Failures);
 
 public static class DiscMedia
 {
@@ -40,23 +42,40 @@ public static class DiscMedia
     }
 
     public static LoadedDisc? Find(string packageId, int discNumber, string? preferredRoot = null)
+        => Search(packageId, discNumber, preferredRoot).Media;
+
+    public static DiscMediaSearchResult Search(string packageId, int discNumber, string? preferredRoot = null)
     {
-        var roots = new List<string>();
-        if (!string.IsNullOrWhiteSpace(preferredRoot) && Directory.Exists(preferredRoot)) roots.Add(preferredRoot);
+        var roots = new List<(string Root, bool Expected)>();
+        if (!string.IsNullOrWhiteSpace(preferredRoot) && Directory.Exists(preferredRoot))
+            roots.Add((preferredRoot, true));
         roots.AddRange(DriveInfo.GetDrives()
             .Where(drive => drive.DriveType == DriveType.CDRom && drive.IsReady)
-            .Select(drive => drive.RootDirectory.FullName));
+            .Select(drive => (drive.RootDirectory.FullName, false)));
 
-        foreach (var root in roots.Distinct(StringComparer.OrdinalIgnoreCase))
+        var failures = new List<DiscMediaFailure>();
+        foreach (var candidate in roots
+                     .GroupBy(candidate => candidate.Root, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => (Root: group.Key, Expected: group.Any(candidate => candidate.Expected))))
         {
+            var root = candidate.Root;
+            // Ignore unrelated data discs. The bootstrap root is expected to contain metadata; other optical
+            // roots become candidates only when at least one GOG Disc Tool metadata file is visible.
+            if (!candidate.Expected &&
+                !File.Exists(Path.Combine(root, "package.json")) &&
+                !File.Exists(Path.Combine(root, "disc.json")))
+                continue;
             try
             {
                 var loaded = Load(root);
                 if (loaded.Package.PackageId.Equals(packageId, StringComparison.OrdinalIgnoreCase) && loaded.Disc.DiscNumber == discNumber)
-                    return loaded;
+                    return new DiscMediaSearchResult(loaded, failures);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                failures.Add(new DiscMediaFailure(root, ex.Message));
+            }
         }
-        return null;
+        return new DiscMediaSearchResult(null, failures);
     }
 }

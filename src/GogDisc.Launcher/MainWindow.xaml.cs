@@ -684,16 +684,36 @@ public partial class MainWindow : Window
 
     private async Task<LoadedDisc> WaitForDiscAsync(int discNumber, CancellationToken cancellationToken)
     {
+        var validationFailureStarted = (DateTimeOffset?)null;
+        const int validationRetrySeconds = 30;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var disc = DiscMedia.Find(_mediaPackageId, discNumber, _initialDiscRoot);
+            var search = DiscMedia.Search(_mediaPackageId, discNumber, _initialDiscRoot);
+            var disc = search.Media;
             if (disc is not null)
             {
                 _activeDiscRoot = disc.Root;
                 EjectButton.Visibility = OpticalDriveEjector.IsOpticalDrive(_activeDiscRoot)
                     ? Visibility.Visible : Visibility.Collapsed;
                 return disc;
+            }
+            if (search.Failures.Count > 0)
+            {
+                validationFailureStarted ??= DateTimeOffset.UtcNow;
+                foreach (var failure in search.Failures)
+                    _log.Write($"Media validation failed at {failure.Root}: {failure.Message}");
+                if (DateTimeOffset.UtcNow - validationFailureStarted >= TimeSpan.FromSeconds(validationRetrySeconds))
+                {
+                    var details = string.Join("\n", search.Failures.Select(failure => $"{failure.Root}: {failure.Message}"));
+                    throw new InvalidDataException(
+                        $"Disc {discNumber} is present, but its metadata could not be read or validated after " +
+                        $"{validationRetrySeconds} seconds. The disc may be damaged or incompletely burned.\n\n{details}");
+                }
+            }
+            else
+            {
+                validationFailureStarted = null;
             }
             ShowWaiting(discNumber);
             await Task.Delay(900, cancellationToken);
