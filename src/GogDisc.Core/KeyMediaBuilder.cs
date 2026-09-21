@@ -68,6 +68,7 @@ public static class KeyMediaBuilder
             PackageId = $"gog-{product.ProductId}",
             Title = product.Title.Trim(),
             Version = request.Version.Trim(),
+            BackgroundHorizontalPosition = Math.Clamp(disc.BackgroundHorizontalPosition, 0, 1),
             ProductType = product.DiscRole == KeyDiscRole.Dlc ? PackageProductType.Dlc : PackageProductType.BaseGame,
             DeploymentType = PackageDeploymentType.GogKeyMedia,
             GogKeyProduct = product,

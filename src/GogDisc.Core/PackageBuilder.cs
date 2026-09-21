@@ -30,6 +30,7 @@ public static class PackageBuilder
                 PackageId = packageId,
                 Title = request.Title.Trim(),
                 Version = request.Version.Trim(),
+                BackgroundHorizontalPosition = Math.Clamp(request.BackgroundHorizontalPosition, 0, 1),
                 ProductType = request.ProductType,
                 RequiredDiscCount = request.Plan.RequiredDiscCount,
                 TotalDiscCount = request.Plan.Discs.Count,

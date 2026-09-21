@@ -33,6 +33,7 @@ public static class CollectionBuilder
                 PackageId = packageId,
                 Title = request.Title.Trim(),
                 Version = request.Version.Trim(),
+                BackgroundHorizontalPosition = Math.Clamp(request.BackgroundHorizontalPosition, 0, 1),
                 DeploymentType = PackageDeploymentType.OfflineMedia,
                 RequiredDiscCount = 1,
                 TotalDiscCount = 1,

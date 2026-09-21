@@ -7,10 +7,11 @@ public static class DiscPlanner
     // beyond that for manifests, artwork, and optical-filesystem overhead without
     // needlessly forcing common sub-600 MB CD payloads onto a second disc.
     public const long CdReserveBytes = 96L * 1024 * 1024;
+    public const long DvdReserveBytes = 96L * 1024 * 1024;
     public const long Cd650CapacityBytes = 650_000_000L;
     public const long CdCapacityBytes = 700_000_000L;
-    public const long Dvd5CapacityBytes = 4_700_000_000L;
-    public const long Dvd9CapacityBytes = 8_500_000_000L;
+    public const long Dvd5CapacityBytes = 4_707_319_808L;
+    public const long Dvd9CapacityBytes = 8_543_666_176L;
     public const long Bd25CapacityBytes = 25_000_000_000L;
     public const long Bd50CapacityBytes = 50_000_000_000L;
     public const long Bd100CapacityBytes = 100_000_000_000L;

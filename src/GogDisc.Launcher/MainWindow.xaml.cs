@@ -101,7 +101,7 @@ public partial class MainWindow : Window
 
     private void LoadArtwork()
     {
-        LoadImage(_package.BackgroundFile, BackgroundImage, DefaultBackgroundUri);
+        LoadImage(_package.BackgroundFile, BackgroundImage, DefaultBackgroundUri, _package.BackgroundHorizontalPosition);
         LoadImage(_package.CoverFile, CoverImage, DefaultCoverUri);
         LoadWindowIcon();
         CoverPlaceholder.Visibility = CoverImage.Source is null ? Visibility.Visible : Visibility.Collapsed;
@@ -127,7 +127,7 @@ public partial class MainWindow : Window
         Icon = BitmapFrame.Create(DefaultIconUri);
     }
 
-    private void LoadImage(string relativePath, Image target, Uri fallback)
+    private void LoadImage(string relativePath, Image target, Uri fallback, double? horizontalPosition = null)
     {
         if (!string.IsNullOrWhiteSpace(relativePath))
         {
@@ -141,7 +141,15 @@ public partial class MainWindow : Window
                     custom.CacheOption = BitmapCacheOption.OnLoad;
                     custom.UriSource = new Uri(path);
                     custom.EndInit();
-                    target.Source = custom;
+                    if (horizontalPosition is { } position)
+                    {
+                        var crop = ArtworkLayout.HorizontalCrop(custom.PixelWidth, custom.PixelHeight, 505d / 312d, position);
+                        target.Source = new CroppedBitmap(custom, new Int32Rect(crop.X, crop.Y, crop.Width, crop.Height));
+                    }
+                    else
+                    {
+                        target.Source = custom;
+                    }
                     return;
                 }
                 catch (Exception ex) { _log.Write($"Could not load artwork '{relativePath}': {ex.Message}"); }
@@ -1173,6 +1181,7 @@ public partial class MainWindow : Window
         RequiredDiscCount = 1,
         TotalDiscCount = 1,
         BackgroundFile = _collection!.BackgroundFile,
+        BackgroundHorizontalPosition = _collection.BackgroundHorizontalPosition,
         CoverFile = _collection.CoverFile,
         IconFile = _collection.IconFile,
         DiscLayout = _collection.DiscLayout,

@@ -92,6 +92,7 @@ public sealed class PackageManifest
     public int RequiredDiscCount { get; set; }
     public int TotalDiscCount { get; set; }
     public string BackgroundFile { get; set; } = "";
+    public double BackgroundHorizontalPosition { get; set; } = 0.5;
     public string CoverFile { get; set; } = "";
     public string IconFile { get; set; } = "game.ico";
     public string ExtrasRelativePath { get; set; } = "Extras";
@@ -116,6 +117,7 @@ public sealed class KeyMediaDisc
 {
     public required GogKeyProduct Product { get; init; }
     public string? BackgroundImage { get; init; }
+    public double BackgroundHorizontalPosition { get; init; } = 0.5;
     public string? CoverImage { get; init; }
     public string? IconImage { get; init; }
 }
@@ -228,6 +230,7 @@ public sealed class CollectionBuildRequest
     public required string OutputDirectory { get; init; }
     public required string LauncherExecutable { get; init; }
     public string? BackgroundImage { get; init; }
+    public double BackgroundHorizontalPosition { get; init; } = 0.5;
     public string? CoverImage { get; init; }
     public string? IconImage { get; init; }
 }
@@ -261,6 +264,7 @@ public sealed class PackageBuildRequest
     public required string OutputDirectory { get; init; }
     public required string LauncherExecutable { get; init; }
     public string? BackgroundImage { get; init; }
+    public double BackgroundHorizontalPosition { get; init; } = 0.5;
     public string? CoverImage { get; init; }
     public string? IconImage { get; init; }
 }

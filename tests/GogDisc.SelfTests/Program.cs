@@ -57,6 +57,7 @@ if (args.Length >= 2 && args[0].Equals("--launcher-smoke", StringComparison.Ordi
 
 var failures = new List<string>();
 await Run("Natural sorting", TestNaturalSorting);
+await Run("Background horizontal positioning", TestBackgroundPositioning);
 await Run("Setup family scanning", TestSetupScanning);
 await Run("Offline collection package", TestOfflineCollection);
 await Run("Disc allocation", TestDiscAllocation);
@@ -102,6 +103,15 @@ Task TestNaturalSorting()
     var values = new[] { "part-10.bin", "part-2.bin", "part-1.bin" };
     Array.Sort(values, NaturalStringComparer.Instance);
     Equal("part-1.bin,part-2.bin,part-10.bin", string.Join(',', values));
+    return Task.CompletedTask;
+}
+
+Task TestBackgroundPositioning()
+{
+    Equal(new PixelCrop(0, 0, 1004, 620), ArtworkLayout.HorizontalCrop(1920, 620, 505d / 312d, 0));
+    Equal(new PixelCrop(458, 0, 1004, 620), ArtworkLayout.HorizontalCrop(1920, 620, 505d / 312d, 0.5));
+    Equal(new PixelCrop(916, 0, 1004, 620), ArtworkLayout.HorizontalCrop(1920, 620, 505d / 312d, 1));
+    Equal(new PixelCrop(0, 0, 600, 824), ArtworkLayout.HorizontalCrop(600, 824, 505d / 312d, 0.75));
     return Task.CompletedTask;
 }
 
@@ -180,8 +190,9 @@ Task TestDiscAllocation()
 {
     Equal(700_000_000L, DiscPlanner.CdCapacityBytes);
     Equal(96L * 1024 * 1024, DiscPlanner.CdReserveBytes);
-    Equal(4_700_000_000L, DiscPlanner.Dvd5CapacityBytes);
-    Equal(8_500_000_000L, DiscPlanner.Dvd9CapacityBytes);
+    Equal(4_707_319_808L, DiscPlanner.Dvd5CapacityBytes);
+    Equal(8_543_666_176L, DiscPlanner.Dvd9CapacityBytes);
+    Equal(96L * 1024 * 1024, DiscPlanner.DvdReserveBytes);
     Equal(100_000_000_000L, DiscPlanner.Bd100CapacityBytes);
     Equal(128_000_000_000L, DiscPlanner.Bd128CapacityBytes);
     var family = new SetupFamily
@@ -232,11 +243,11 @@ Task TestMixedMediaEconomy()
 
     // Five smaller discs have less nominal capacity, but two burns are the more economical choice.
     var dvdInventory = MediaCatalog.ParseInventory("DVD9 x2, DVD5 x1, CD700 x3");
-    var dvdSuggestion = MediaCatalog.Suggest(14_000_000_000L, dvdInventory);
+    var dvdSuggestion = MediaCatalog.Suggest(14_500_000_000L, dvdInventory);
     Equal(2, dvdSuggestion.Discs.Count);
     True(dvdSuggestion.Discs.All(disc => disc.Id == "DVD9"),
         "The optimizer preferred five smaller discs over two DVD-9 discs.");
-    var dvdOptions = MediaCatalog.SuggestOptions(14_000_000_000L, dvdInventory);
+    var dvdOptions = MediaCatalog.SuggestOptions(14_500_000_000L, dvdInventory);
     True(dvdOptions.Any(option => option.Discs.Count == 5),
         "The five-disc capacity-saving alternative was not offered to the user.");
     Equal(2, dvdOptions.Single(option => option.Discs.Count == 2).SuggestedCaseCapacity);
@@ -309,6 +320,7 @@ async Task TestBuildAndStage()
         OutputDirectory = fixture.Directory("output"),
         LauncherExecutable = launcher,
         BackgroundImage = background,
+        BackgroundHorizontalPosition = 0.8,
         CoverImage = cover
     });
     Equal(2, result.Manifest.RequiredDiscCount);
@@ -328,6 +340,7 @@ async Task TestBuildAndStage()
         "Burning instructions did not identify the required media.");
     Equal(3500L, media.Disc.CapacityBytes);
     Equal("background.jpg", result.Manifest.BackgroundFile);
+    Equal(0.8, result.Manifest.BackgroundHorizontalPosition);
     Equal("cover.png", result.Manifest.CoverFile);
     True(File.Exists(Path.Combine(discOne, "cover.png")), "Cover art was not packaged.");
 }
@@ -554,6 +567,7 @@ Task TestSingleDiscInventorySelection()
 {
     var inventory = MediaCatalog.ParseInventory("BD50 x1, DVD9 x2, BD25 x1");
     Equal("DVD9", MediaCatalog.SuggestSingle(8_000_000_000L, inventory).Id);
+    Equal("DVD9", MediaCatalog.SuggestSingle(8_440_000_000L, inventory).Id);
     Equal("BD25", MediaCatalog.SuggestSingle(9_000_000_000L, inventory).Id);
 
     try

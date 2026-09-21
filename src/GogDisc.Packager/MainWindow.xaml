@@ -145,7 +145,23 @@
                 <Button x:Name="ExtrasBrowseButton" Grid.Row="5" Grid.Column="2" Content="Browse…" Click="BrowseExtras_Click"/>
 
                 <TextBlock Grid.Row="6" Text="Background" VerticalAlignment="Center"/>
-                <TextBox Grid.Row="6" Grid.Column="1" x:Name="BackgroundBox"/>
+                <StackPanel Grid.Row="6" Grid.Column="1">
+                    <TextBox x:Name="BackgroundBox" ToolTip="The launcher displays this in a 505 × 312 area."
+                             TextChanged="BackgroundPreview_Changed"/>
+                    <TextBlock Text="Horizontal focus (left ↔ right; launcher crop 505 × 312)"
+                               Foreground="#AEB7C7" FontSize="11" Margin="2,3,0,0"/>
+                    <Slider x:Name="BackgroundPositionSlider" Minimum="0" Maximum="100" Value="50"
+                            TickFrequency="10" Margin="0,2,0,4" ValueChanged="BackgroundPreview_Changed"/>
+                    <Border Width="505" Height="312" HorizontalAlignment="Left" Margin="0,4,0,8"
+                            Background="#0C0F15" BorderBrush="#465065" BorderThickness="1" CornerRadius="4">
+                        <Grid ClipToBounds="True">
+                            <TextBlock x:Name="BackgroundPreviewHint" Text="Choose a background to preview its launcher crop"
+                                       Foreground="#8F99AA" TextWrapping="Wrap" TextAlignment="Center"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24"/>
+                            <Image x:Name="BackgroundPreview" Stretch="UniformToFill"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
                 <Button Grid.Row="6" Grid.Column="2" Content="Browse…" Click="BrowseBackground_Click"/>
 
                 <TextBlock Grid.Row="7" Text="Cover art" VerticalAlignment="Center"/>

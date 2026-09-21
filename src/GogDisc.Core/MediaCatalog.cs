@@ -30,8 +30,8 @@ public static class MediaCatalog
 {
     public static readonly OpticalMediaType Cd650 = new("CD650", "CD-R 650 MB", DiscPlanner.Cd650CapacityBytes, DiscPlanner.CdReserveBytes);
     public static readonly OpticalMediaType Cd700 = new("CD700", "CD-R 700 MB", DiscPlanner.CdCapacityBytes, DiscPlanner.CdReserveBytes);
-    public static readonly OpticalMediaType Dvd5 = new("DVD5", "DVD-5", DiscPlanner.Dvd5CapacityBytes, DiscPlanner.DefaultReserveBytes);
-    public static readonly OpticalMediaType Dvd9 = new("DVD9", "DVD-9", DiscPlanner.Dvd9CapacityBytes, DiscPlanner.DefaultReserveBytes);
+    public static readonly OpticalMediaType Dvd5 = new("DVD5", "DVD-5", DiscPlanner.Dvd5CapacityBytes, DiscPlanner.DvdReserveBytes);
+    public static readonly OpticalMediaType Dvd9 = new("DVD9", "DVD-9", DiscPlanner.Dvd9CapacityBytes, DiscPlanner.DvdReserveBytes);
     public static readonly OpticalMediaType Bd25 = new("BD25", "BD-25", DiscPlanner.Bd25CapacityBytes, DiscPlanner.DefaultReserveBytes);
     public static readonly OpticalMediaType Bd50 = new("BD50", "BD-50", DiscPlanner.Bd50CapacityBytes, DiscPlanner.DefaultReserveBytes);
     public static readonly OpticalMediaType Bd100 = new("BD100", "BDXL-100", DiscPlanner.Bd100CapacityBytes, DiscPlanner.DefaultReserveBytes);

@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media.Imaging;
 using System.ComponentModel;
 using GogDisc.Core;
 using Microsoft.Win32;
@@ -58,6 +59,37 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog { Filter = "Images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg" };
         if (dialog.ShowDialog() == true) BackgroundBox.Text = dialog.FileName;
+    }
+
+    private void BackgroundPreview_Changed(object sender, RoutedEventArgs e)
+    {
+        if (BackgroundPreview is null || BackgroundPreviewHint is null || BackgroundPositionSlider is null) return;
+        BackgroundPreview.Source = null;
+        var path = BackgroundBox?.Text;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            BackgroundPreviewHint.Text = "Choose a background to preview its launcher crop";
+            BackgroundPreviewHint.Visibility = Visibility.Visible;
+            return;
+        }
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(Path.GetFullPath(path));
+            bitmap.EndInit();
+            var crop = ArtworkLayout.HorizontalCrop(bitmap.PixelWidth, bitmap.PixelHeight, 505d / 312d,
+                BackgroundPositionSlider.Value / 100d);
+            BackgroundPreview.Source = new CroppedBitmap(bitmap,
+                new Int32Rect(crop.X, crop.Y, crop.Width, crop.Height));
+            BackgroundPreviewHint.Visibility = Visibility.Collapsed;
+        }
+        catch
+        {
+            BackgroundPreviewHint.Text = "This image could not be previewed";
+            BackgroundPreviewHint.Visibility = Visibility.Visible;
+        }
     }
 
     private void BrowseCover_Click(object sender, RoutedEventArgs e)
@@ -498,6 +530,7 @@ public partial class MainWindow : Window
                     {
                         Product = disc,
                         BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                        BackgroundHorizontalPosition = BackgroundPositionSlider.Value / 100d,
                         CoverImage = EmptyToNull(CoverBox.Text),
                         IconImage = preparedIcon
                     }).ToList();
@@ -537,6 +570,7 @@ public partial class MainWindow : Window
                     OutputDirectory = OutputBox.Text,
                     LauncherExecutable = LauncherBox.Text,
                     BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                    BackgroundHorizontalPosition = BackgroundPositionSlider.Value / 100d,
                     CoverImage = EmptyToNull(CoverBox.Text),
                     IconImage = preparedIcon
                 }, progress, _cancellation.Token);
@@ -553,6 +587,7 @@ public partial class MainWindow : Window
                 OutputDirectory = OutputBox.Text,
                 LauncherExecutable = LauncherBox.Text,
                 BackgroundImage = EmptyToNull(BackgroundBox.Text),
+                BackgroundHorizontalPosition = BackgroundPositionSlider.Value / 100d,
                 CoverImage = EmptyToNull(CoverBox.Text),
                 IconImage = preparedIcon
             }, progress, _cancellation.Token);
@@ -662,6 +697,7 @@ public partial class MainWindow : Window
         ExtrasBox.Clear();
         IncludePatchesBox.IsChecked = false;
         BackgroundBox.Clear();
+        BackgroundPositionSlider.Value = 50;
         CoverBox.Clear();
         IconBox.Clear();
         SummaryText.Text = "Select a stock setup_*.exe, then scan the package.";
@@ -686,9 +722,12 @@ public partial class MainWindow : Window
         };
     }
 
-    private long GetReserve() => MediaBox.SelectedIndex is 0 or 1
-        ? DiscPlanner.CdReserveBytes
-        : DiscPlanner.DefaultReserveBytes;
+    private long GetReserve() => MediaBox.SelectedIndex switch
+    {
+        0 or 1 => DiscPlanner.CdReserveBytes,
+        2 or 3 => DiscPlanner.DvdReserveBytes,
+        _ => DiscPlanner.DefaultReserveBytes
+    };
 
     private void InferFields(string setupPath)
     {
