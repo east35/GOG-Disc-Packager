@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>gog-disc-companion</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="../../assets/AppIcon.png" Link="AppIcon.png" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="..\GogDisc.Core\GogDisc.Core.csproj" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.21" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.21" />
+  </ItemGroup>
+</Project>

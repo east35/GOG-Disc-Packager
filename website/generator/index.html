@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Template generator · GOG Disc Packager</title>
+    <link rel="icon" data-static-asset="favicon.svg" />
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="./generator.css" />
+  </head>
+  <body>
+    <aside class="beta-banner" aria-label="Beta release">
+      <strong>BETA</strong>
+      <span>Template generator is in active development. Save your work as JSON and check a paper proof before printing.</span>
+    </aside>
+    <header>
+      <a class="brand" href="../"
+        ><img
+          class="brand-icon"
+          data-static-asset="AppIcon.ico"
+          alt=""
+        /><span
+          >GOG <b>Disc Packager</b></span
+        ></a
+      >
+      <nav><a href="../">← Back to collection</a></nav>
+    </header>
+    <main class="workspace">
+      <div class="workspace-heading">
+        <div>
+          <p class="eyebrow">YOUR PHYSICAL EDITION</p>
+          <h1>Template generator</h1>
+        </div>
+        <div class="actions">
+          <button id="open-button" type="button">Open JSON</button
+          ><input
+            id="open"
+            type="file"
+            accept="application/json,.json"
+            hidden
+          /><button id="save">Save JSON ↓</button><button id="export-pdf" class="primary" disabled>Export PDF ↓</button>
+        </div>
+      </div>
+      <p class="export-help">Save the JSON file to keep your work in progress, including uploaded artwork. Upload it with <strong>Open JSON</strong> to continue editing. Export PDF for the cover, case interior, and all disc labels.</p>
+      <div class="editor">
+        <form id="controls" autocomplete="off">
+          <section>
+            <h2><span>01</span> Game details</h2>
+            <label
+              >Game title<input
+                name="game.title"
+                placeholder="Your game title"
+                required
+                maxlength="160"
+            /></label>
+            <div class="pair">
+              <label
+                >GOG game ID<input
+                  name="game.gameId"
+                  placeholder="e.g. 120765…"
+                  required /></label
+              ><label
+                >Release year<input
+                  name="game.releaseYear"
+                  type="number"
+                  min="1970"
+                  max="2100"
+                  required
+              /></label>
+            </div>
+            <div class="pair">
+              <label>Developer<input name="game.developer" required /></label
+              ><label>Publisher<input name="game.publisher" required /></label>
+            </div>
+          </section>
+          <section>
+            <h2><span>02</span> Case & media</h2>
+            <div class="pair">
+              <label
+                >Case spine<select name="case.spine">
+                  <option value="14mm">14 mm · 1–2 discs</option>
+                  <option value="17mm">17 mm · wide case</option>
+                </select></label
+              ><label
+                >Contents<select name="case.content">
+                  <option value="full-game">Full game</option>
+                  <option value="key-media">GOG Key Media</option>
+                </select></label
+              >
+            </div>
+            <div class="pair">
+              <label
+                >Media<select name="media.type">
+                  <option value="blu-ray">Blu-ray</option>
+                  <option value="dvd">DVD</option>
+                  <option value="cd">CD</option>
+                </select></label
+              ><label
+                >Disc count<input
+                  name="media.discCount"
+                  type="number"
+                  min="1"
+                  max="99"
+                  required
+              /></label>
+            </div>
+            <div id="disc-fields"></div>
+            <label class="check"><input id="preservation" name="game.preservation.enabled" type="checkbox" /> GOG Preservation Program</label>
+            <div id="preservation-controls" hidden>
+              <p class="muted">Adds the program icon to the bottom of the spine and the front cover. Position the front badge below.</p>
+              <label>Front badge · horizontal<input name="game.preservation.x" type="range" min="0" max="1" step="0.01" /></label>
+              <label>Front badge · vertical<input name="game.preservation.y" type="range" min="0" max="1" step="0.01" /></label>
+              <label>Front badge · size<input name="game.preservation.size" type="range" min="32" max="96" step="1" /></label>
+            </div>
+            <label>Spine background<select name="game.artwork.spineBackground"><option value="black">Black</option><option value="white">White</option></select></label>
+            <label>Disc media logo<select name="game.artwork.mediaMarkColor"><option value="black">Black PNG</option><option value="white">White PNG</option></select></label>
+            <label>Clear-case interior<select name="game.artwork.interiorMode"><option value="generic">Generic fallback</option><option value="artwork">Custom artwork</option></select></label>
+            <p class="muted">Choose Case interior in Artwork to upload an inside cover. The generic design is used until custom artwork is selected.</p>
+          </section>
+          <section>
+            <h2><span>03</span> Artwork</h2>
+            <label>Artwork panel<select id="art-slot"></select></label
+            ><label class="upload"
+              ><strong id="art-upload-label">Choose artwork</strong><input
+                id="art"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+              /><span id="art-upload-help"
+                >PNG, JPG or WebP · up to 15 MB</span
+              ></label
+            >
+            <p id="art-info" class="muted">
+              Add artwork to see your cover take shape.
+            </p>
+            <div class="pair">
+              <label
+                ><span id="art-x-label">Focal point · horizontal</span><input
+                  name="focal.x"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0.5" /></label
+              ><label
+                ><span id="art-y-label">Vertical</span><input
+                  name="focal.y"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value="0.5"
+              /></label>
+            </div>
+            <label id="art-scale-control" hidden
+              ><span><span id="art-scale-label">Image size</span> · <output id="art-scale-value">100%</output></span
+              ><input
+                name="asset.scale"
+                type="range"
+                min="1"
+                max="2"
+                step="0.01"
+                value="1"
+            /></label>
+            <label class="check"
+              ><input id="approved" type="checkbox" /> I approve this artwork
+              for my edition</label
+            >
+            <button id="remove-art" type="button">
+              Remove selected artwork
+            </button>
+            <label class="check"
+              ><input id="includes-title" type="checkbox" /> Front artwork
+              already includes the game title</label
+            >
+            <label
+              >Spine title<select name="game.artwork.spineTitleMode">
+                <option value="logo">Game logo (title text fallback)</option>
+                <option value="text">Title text</option>
+              </select></label
+            >
+            <p class="muted">
+              Upload a transparent PNG in the Game logo slot to reuse it on the
+              front, rotated on the spine, and on disc labels. Full-wrap artwork
+              spans all three panels; separate front and back images override
+              it.
+            </p>
+          </section>
+          <details open>
+            <summary>Back cover composition</summary>
+            <div class="back-copy-note">
+              <strong>Fixed editorial blueprint</strong>
+              <span
+                >A full-width headline and synopsis, followed by short highlights and screenshots.</span
+              >
+            </div>
+            <div class="back-blueprint" aria-label="Back cover structure">
+              <div class="back-blueprint-slot back-blueprint-headline">
+                <span>01</span><b>Hook</b><small>2 lines</small>
+              </div>
+              <div class="back-blueprint-slot back-blueprint-synopsis">
+                <span>02</span><b>Synopsis</b><small>short paragraph</small>
+              </div>
+              <div class="back-blueprint-slot back-blueprint-features">
+                <span>03</span><b>Highlights</b><small>4 max</small>
+              </div>
+              <div class="back-blueprint-slot back-blueprint-screenshots">
+                <span>04</span><b>Screenshot strip</b><small>up to 3</small>
+              </div>
+            </div>
+            <label
+              >Back headline<input
+                id="back-headline"
+                name="game.tagline"
+                maxlength="68"
+                placeholder="e.g. A city with a secret to keep"
+              /><small class="field-note"
+                ><span data-count-for="back-headline">0</span>/68 characters ·
+                2 lines max</small
+              ></label
+            >
+            <label
+              >Back synopsis<textarea
+                id="back-synopsis"
+                name="game.description"
+                rows="5"
+                maxlength="420"
+                placeholder="One tight paragraph: who you are, what is at stake, and what makes this edition worth keeping."
+              ></textarea
+              ><small class="field-note"
+                ><span data-count-for="back-synopsis">0</span>/420 characters ·
+                one paragraph</small
+              ></label
+            >
+            <fieldset class="back-highlights">
+              <legend>Feature / edition highlights</legend>
+              <p class="field-help">
+                Four short lines appear in two columns. Leave them
+                blank to use the selected game features automatically.
+              </p>
+              <div id="back-highlights">
+                <label
+                  >Highlight 1<input
+                    id="back-highlight-0"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. Explore a living world"
+                  /></label
+                ><label
+                  >Highlight 2<input
+                    id="back-highlight-1"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. Shape your own story"
+                  /></label
+                ><label
+                  >Highlight 3<input
+                    id="back-highlight-2"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. Includes bonus content"
+                  /></label
+                ><label
+                  >Highlight 4<input
+                    id="back-highlight-3"
+                    data-back-item
+                    maxlength="34"
+                    placeholder="e.g. DRM-free offline installer"
+                  /></label
+                >
+              </div>
+              <small class="field-note"
+                ><span id="back-highlight-count">0</span>/4 lines used · 34
+                characters per line</small
+              >
+            </fieldset>
+            <label
+              >Copyright notice (optional override)<textarea
+                id="back-copyright"
+                name="game.copyright"
+                rows="2"
+                maxlength="180"
+                placeholder="Leave blank to build this line from the game metadata."
+              ></textarea
+              ><small class="field-note"
+                ><span data-count-for="back-copyright">0</span>/180
+                characters</small
+              ></label
+            >
+          </details>
+          <details>
+            <summary>Rating, features & archive</summary>
+            <div class="pair">
+              <label
+                >Rating system<select name="game.rating.system">
+                  <option value="none">No rating</option>
+                  <option>ESRB</option>
+                  <option>PEGI</option>
+                </select></label
+              ><label
+                >Rating value<input
+                  name="game.rating.value"
+                  placeholder="e.g. M or 18"
+              /></label>
+            </div>
+            <label
+              >Rating descriptors<input
+                name="descriptors"
+                placeholder="Separate with commas"
+            /></label>
+            <div id="features" class="features"></div>
+            <div class="pair">
+              <label
+                >Archive date<input
+                  name="game.archive.date"
+                  type="date" /></label
+              ><label>Archivist<input name="game.archive.archivist" /></label>
+            </div>
+            <h3>System requirements</h3>
+            <div id="requirements" class="pair"></div>
+          </details>
+        </form>
+        <section class="preview-area" aria-label="Live preview">
+          <div class="preview-toolbar">
+            <div class="tabs" role="group" aria-label="Preview view">
+              <button data-view="wrap" aria-pressed="true">Full wrap</button
+              ><button data-view="front" aria-pressed="false">Front</button
+              ><button data-view="back" aria-pressed="false">Back</button
+              ><button data-view="spine" aria-pressed="false">Spine</button
+              ><button data-view="disc" aria-pressed="false">
+                Disc labels
+              </button><button data-view="interior" aria-pressed="false">Interior</button>
+            </div>
+            <label class="check"
+              ><input id="guides" type="checkbox" checked /> Guides</label
+            >
+          </div>
+          <div class="preview-options">
+            <label id="disc-preview-label" hidden
+              >Preview disc<select id="disc-preview"></select></label
+            ><label
+              >Zoom<select id="zoom">
+                <option value="1">Fit</option>
+                <option value="1.5">150%</option>
+                <option value="2">200%</option>
+              </select></label
+            ><a
+              href="https://www.figma.com/design/CBR9nICUoNR4Km00Dc8Nui/GOG-Disc-Packager?node-id=187-1930"
+              target="_blank"
+              rel="noreferrer"
+              >Figma template ↗</a
+            >
+          </div>
+          <div class="preview-stage"><div id="canvases"></div></div>
+          <div class="preview-caption">
+            <span id="dimensions"></span
+            ><span>Figma template · print calibration pending</span>
+          </div>
+          <div class="validation">
+            <h2>Project checks</h2>
+            <ul id="checks"></ul>
+          </div>
+          <p class="scope-note">
+            Original Figma branding, badges and panel layout. Guides are for
+            inspection; confirm case dimensions and your disc manufacturer’s
+            printable area before printing. PDF pages use the current template dimensions; print at 100% / actual size and check a paper proof before final printing.
+          </p>
+          <p id="status" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="./generator.js"></script>
+  </body>
+</html>

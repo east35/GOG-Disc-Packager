@@ -122,7 +122,45 @@ and release signing, see [Code signing and reputation](docs/CODE-SIGNING.md).
 
 ## Build from source
 
-Building requires Windows 10 or 11, the .NET 8 SDK, and PowerShell.
+The Linux companion preview opens existing offline discs, stages and verifies
+installers, and runs them through umu/Proton. It also reads current single-disc
+collections and has a GOG Key Media account-download flow; the latter awaits a
+real owned-game test on Linux. It includes a saved game library,
+game icons and shortcuts, extras, logs, and installation management. Look Outside
+has been confirmed working from disc insertion through gameplay on the initial
+Bazzite machine; physical multi-disc testing is deferred. See the
+[Linux companion guide and validation plan](docs/LINUX-COMPANION.md) for usage,
+preview limitations, and test status.
+
+With a .NET 8 SDK, inspect an automatically discovered mounted package or stage
+and verify its installer files:
+
+```bash
+dotnet run --project src/GogDisc.Companion -- inspect
+dotnet run --project src/GogDisc.Companion -- stage
+```
+
+Use `--disc /path/to/mount` when automatic discovery is unavailable and
+`--staging /path/to/folder` to override the XDG cache location.
+
+Build and install the graphical Linux companion (the publish script uses Podman
+automatically when the host has no .NET SDK):
+
+```bash
+./publish-linux.sh
+./install-linux.sh
+```
+
+The installed per-user application starts at login, watches for newly mounted
+GOG Disc Tool media, and opens the install prompt automatically. It stages and
+verifies offline installers before launching them through `umu-run`. Open it from
+the application menu to manage saved games without a disc. The publish script
+also creates a preview tar archive with an installer and SHA-256 checksum.
+Users can extract that archive and open **Install GOG Disc Companion** without
+building from source.
+
+Building the Windows packager and launcher requires Windows 10 or 11, the .NET
+8 SDK, and PowerShell.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1
@@ -141,8 +179,9 @@ dotnet run --project .\tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj -c Relea
 
 Work that needs real-disc testing before a stable release goes on the `nightly`
 branch. Every push to that branch, as well as the daily scheduled run, replaces
-the rolling **Nightly** GitHub prerelease with a signed Windows ZIP and checksum.
-These builds may be unstable and should not be presented as the normal download.
+the rolling **Nightly** GitHub prerelease with a signed Windows ZIP, a
+self-contained Linux x64 companion archive, and checksums. These builds may be
+unstable and should not be presented as the normal download.
 
 Start new test work by bringing `nightly` up to date with `main`, commit and push
 changes to `nightly`, then download the result from the Nightly prerelease. Once

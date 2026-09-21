@@ -1,0 +1,48 @@
+/* Final presentation adjustments for the landing page hero. */
+h1 span em {
+  font-style: italic;
+  font-synthesis: style;
+  font-weight: 500;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+}
+
+.hero-actions .download,
+.hero-actions .watch-video {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  margin-left: 0;
+}
+
+.watch-video {
+  display: inline-flex;
+  align-items: center;
+  padding: 17px 22px;
+  border: 1px solid #c7afff55;
+  border-radius: 7px;
+  color: #d8c5f2;
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color .2s, background .2s;
+}
+
+.watch-video:hover {
+  border-color: #c7afff;
+  background: #c7afff12;
+}
+
+@media (max-width: 900px) {
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .watch-video {
+    margin: 0;
+  }
+}

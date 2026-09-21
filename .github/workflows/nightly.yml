@@ -16,7 +16,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: nightly
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Test Linux companion
+        run: dotnet run --project tests/GogDisc.CompanionTests/GogDisc.CompanionTests.csproj -c Release
+
+      - name: Build Linux companion
+        run: ./publish-linux.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-companion
+          path: |
+            artifacts/gog-disc-companion-linux-x64-preview.tar.gz
+            artifacts/gog-disc-companion-linux-x64-preview.tar.gz.sha256
+          if-no-files-found: error
+
   nightly:
+    needs: linux
     runs-on: windows-latest
     env:
       SIGNING_CERTIFICATE_AVAILABLE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
@@ -82,6 +109,11 @@ jobs:
           "archive=$name.zip" >> $env:GITHUB_OUTPUT
           "checksum=$name.sha256" >> $env:GITHUB_OUTPUT
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-companion
+          path: artifacts
+
       - name: Publish rolling prerelease
         shell: pwsh
         env:
@@ -97,6 +129,8 @@ jobs:
           Commit: ``$env:GITHUB_SHA``
 
           This build may be unstable. Use the latest stable release for normal installations.
+
+          Downloads include the Windows x64 packager and the Linux x64 companion preview.
           "@
 
           if (gh release view nightly 2>$null) {
@@ -104,10 +138,14 @@ jobs:
             gh release upload nightly `
               ".\artifacts\${{ steps.package.outputs.archive }}" `
               ".\artifacts\${{ steps.package.outputs.checksum }}" `
+              ".\artifacts\gog-disc-companion-linux-x64-preview.tar.gz" `
+              ".\artifacts\gog-disc-companion-linux-x64-preview.tar.gz.sha256" `
               --clobber
           } else {
             gh release create nightly `
               ".\artifacts\${{ steps.package.outputs.archive }}" `
               ".\artifacts\${{ steps.package.outputs.checksum }}" `
+              ".\artifacts\gog-disc-companion-linux-x64-preview.tar.gz" `
+              ".\artifacts\gog-disc-companion-linux-x64-preview.tar.gz.sha256" `
               --verify-tag --prerelease --title 'GOG Disc Packager Nightly' --notes $notes
           }

@@ -14,6 +14,7 @@ public static class InstallDiscovery
 
     public static InstallState? Discover(PackageManifest package)
     {
+        if (!OperatingSystem.IsWindows()) return null;
         var saved = InstallStateStore.Load(package.PackageId);
         if (saved is not null && IsUseful(saved) && IsPlausibleForPackage(saved, package)) return saved;
 
@@ -118,6 +119,7 @@ public static class InstallDiscovery
 
     private static string? FindShortcut(string[] names)
     {
+        if (!OperatingSystem.IsWindows()) return null;
         var roots = new[]
         {
             Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
@@ -143,6 +145,7 @@ public static class InstallDiscovery
 
     private static string? ResolveShortcut(string shortcut)
     {
+        if (!OperatingSystem.IsWindows()) return null;
         try
         {
             var shellType = Type.GetTypeFromProgID("WScript.Shell");

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>GogDisc.Core</AssemblyName>
     <RootNamespace>GogDisc.Core</RootNamespace>
   </PropertyGroup>
