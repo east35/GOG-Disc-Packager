@@ -179,8 +179,9 @@ dotnet run --project .\tests\GogDisc.SelfTests\GogDisc.SelfTests.csproj -c Relea
 
 Work that needs real-disc testing before a stable release goes on the `nightly`
 branch. Every push to that branch, as well as the daily scheduled run, replaces
-the rolling **Nightly** GitHub prerelease with a signed Windows ZIP and checksum.
-These builds may be unstable and should not be presented as the normal download.
+the rolling **Nightly** GitHub prerelease with a signed Windows ZIP, a
+self-contained Linux x64 companion archive, and checksums. These builds may be
+unstable and should not be presented as the normal download.
 
 Start new test work by bringing `nightly` up to date with `main`, commit and push
 changes to `nightly`, then download the result from the Nightly prerelease. Once
