@@ -10,14 +10,14 @@ kind: null
 sdd_lane: null
 dependencies: []
 tags: ["gog-disc-manager"]
-updated_at: "2026-09-25T16:21:51.617308+00:00"
+updated_at: "2026-09-25T16:22:58.085565+00:00"
 created_at: "2026-09-25T16:21:51.617308+00:00"
 ---
+
 
 ## Intent
 
 The app should be able to stream content from a disc directly without first saving to local disc.
-
 
 ## User Story
 
