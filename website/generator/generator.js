@@ -3,6 +3,7 @@ import {
   newProject,
   syncLabels,
   parseProject,
+  serializeProject,
   projectChecks,
 } from "./model.js";
 import {
@@ -365,7 +366,7 @@ $("#open").onchange = async (e) => {
 };
 $("#save").onclick = () => {
   const url = URL.createObjectURL(
-      new Blob([JSON.stringify(project, null, 2)], {
+      new Blob([serializeProject(project)], {
         type: "application/json",
       }),
     ),
@@ -447,7 +448,7 @@ function draw() {
       ? "120 mm disc · 118 mm outer / " +
         (project.media.type === "cd" ? "40" : "23") +
         " mm inner print guide"
-      : `${project.case.spine} case · ${project.case.content==='full-game'?'full game':'game-key media'}`;
+      : `${project.case.format === "dvd" ? "DVD" : "Blu-ray"} case · ${project.case.spine} spine · ${project.case.content==='full-game'?'full game':'game-key media'}`;
   const problems = [
     ...projectChecks(project, images.front || images.fullWrap),
     ...result.issues,

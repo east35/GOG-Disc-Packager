@@ -11,6 +11,18 @@ export const FEATURES = [
   "controller",
   "offline-installer",
 ];
+export const serializeProject = (project) =>
+  JSON.stringify(
+    {
+      ...project,
+      case: {
+        ...project.case,
+        format: project.case?.format ?? "blu-ray",
+      },
+    },
+    null,
+    2,
+  );
 export const mediaName = (v) =>
   ({ "blu-ray": "Blu-ray", dvd: "DVD", cd: "CD" })[v];
 export const newProject = () => ({
@@ -26,7 +38,7 @@ export const newProject = () => ({
     features: ["single-player", "offline-installer"],
     archive: { date: new Date().toISOString().slice(0, 10) },
   },
-  case: { spine: "14mm", content: "full-game" },
+  case: { format: "blu-ray", spine: "14mm", content: "full-game" },
   media: { type: "blu-ray", discCount: 1, labels: [{ number: 1 }] },
 });
 export function syncLabels(p) {
@@ -49,6 +61,7 @@ export function parseProject(raw) {
   }
   if (
     !g ||
+    !["blu-ray", "dvd"].includes(p.case?.format ?? "blu-ray") ||
     !["14mm", "17mm"].includes(p.case?.spine) ||
     !["full-game", "key-media"].includes(p.case?.content) ||
     !["blu-ray", "dvd", "cd"].includes(p.media?.type) ||
@@ -57,6 +70,7 @@ export function parseProject(raw) {
     p.media.discCount > 99
   )
     fail();
+  p.case.format ??= "blu-ray";
   for (const k of ["title", "gameId", "developer", "publisher"])
     if (typeof g[k] !== "string") fail();
   if (
@@ -190,15 +204,14 @@ export function projectChecks(p, image) {
     issues.push("Confirm a case with enough trays for this disc count.");
   if (!image) issues.push("Choose front artwork.");
   else {
-    const dpi = Math.min(
+    const panelWidthMm = p.game.artwork.front?.imageUrl
+        ? p.case.format === "dvd" ? 129 : 128.1
+        : (p.case.spine === "14mm" ? 270.2 : 273.7),
+      dpi = Math.min(
       image.width /
-        ((p.game.artwork.front?.imageUrl
-          ? 128.1
-          : p.case.spine === "14mm"
-            ? 270.2
-            : 273.7) /
-          25.4),
-      image.height / (159.6 / 25.4),
+        (panelWidthMm / 25.4),
+      image.height /
+        ((p.case.format === "dvd" ? 183 : 159.6) / 25.4),
     );
     if (dpi < 300)
       issues.push(

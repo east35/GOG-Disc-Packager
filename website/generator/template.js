@@ -8,6 +8,26 @@ export const TEMPLATE = {
   top: 24,
   disc: 338.4167,
 };
+export const CASE_FORMATS = Object.freeze({
+  "blu-ray": { label: "Blu-ray", widthMm: 128.1, heightMm: 159.6 },
+  dvd: { label: "DVD", widthMm: 129, heightMm: 183 },
+});
+export function caseScale(format = "blu-ray") {
+  const selected = CASE_FORMATS[format] || CASE_FORMATS["blu-ray"];
+  return {
+    x: selected.widthMm / CASE_FORMATS["blu-ray"].widthMm,
+    y: selected.heightMm / CASE_FORMATS["blu-ray"].heightMm,
+  };
+}
+export function cropMarkGeometry(spine) {
+  const wide = spine === "17mm";
+  return {
+    left: wide ? 18 : 24,
+    right: wide ? 801 : 797,
+    top: 23,
+    bottom: 480,
+  };
+}
 export function geometry(spine) {
   const wide = spine === "17mm";
   return {
@@ -152,6 +172,7 @@ const HOLDER_ADDRESS =
 export function createRenderer(templateAssets) {
   const issues = new Set();
   let renderScale = 2;
+  let layoutScale = { x: 1, y: 1 };
   const make = (w, h, scale = renderScale) => {
     const c = document.createElement("canvas");
     c.width = Math.ceil(w * scale);
@@ -180,16 +201,28 @@ export function createRenderer(templateAssets) {
       ctx.scale(1, -1);
     }
     if (contain) {
-      const s = Math.min(w / img.width, h / img.height);
+      const s = Math.min(
+        (w * layoutScale.x) / img.width,
+        (h * layoutScale.y) / img.height,
+      );
+      const imageWidth = (img.width * s) / layoutScale.x;
+      const imageHeight = (img.height * s) / layoutScale.y;
       ctx.drawImage(
         img,
-        x + (w - img.width * s) / 2,
-        y + (h - img.height * s) / 2,
-        img.width * s,
-        img.height * s,
+        x + (w - imageWidth) / 2,
+        y + (h - imageHeight) / 2,
+        imageWidth,
+        imageHeight,
       );
     } else {
-      const r = cropRect(img.width, img.height, w, h, focal, zoom);
+      const r = cropRect(
+        img.width,
+        img.height,
+        w * layoutScale.x,
+        h * layoutScale.y,
+        focal,
+        zoom,
+      );
       ctx.drawImage(img, r.x, r.y, r.width, r.height, x, y, w, h);
     }
     ctx.restore();
@@ -285,6 +318,13 @@ export function createRenderer(templateAssets) {
     grad.addColorStop(0.29427, "#ad34e0");
     grad.addColorStop(0.7354, "#601eca");
     rect(ctx, x, y, w, h, grad);
+  }
+  function cropMarks(ctx, spine) {
+    const marks = cropMarkGeometry(spine);
+    rect(ctx, marks.left, 0, 1, 504, "#000");
+    rect(ctx, 0, marks.top, 821, 1, "#000");
+    rect(ctx, 0, marks.bottom, 821, 1, "#000");
+    rect(ctx, marks.right, 0, 1, 504, "#000");
   }
   function rating(ctx, g, x, y, w, h, full = false) {
     const key = ratingAsset(g.rating);
@@ -589,8 +629,11 @@ export function createRenderer(templateAssets) {
   }
   function drawWrap(p, images, guides) {
     const geo = geometry(p.case.spine),
-      [c, ctx] = make(820, 504);
+      scale = caseScale(p.case.format),
+      [c, ctx] = make(TEMPLATE.width * scale.x, TEMPLATE.height * scale.y);
+    ctx.scale(scale.x, scale.y);
     const g = p.game;
+    layoutScale = scale;
     rect(ctx, 0, 0, 820, 504, "#fff");
     rect(ctx, geo.backX, 24, geo.trimWidth, 456, "#242424");
     if (images.fullWrap)
@@ -712,14 +755,7 @@ export function createRenderer(templateAssets) {
         24 + 76 + y * (372 - size), size, size);
     }
     if (guides) {
-      icon(
-        ctx,
-        p.case.spine === "14mm" ? "crop-14" : "crop-wide",
-        0,
-        0,
-        820,
-        504,
-      );
+      cropMarks(ctx, p.case.spine);
       ctx.save();
       ctx.strokeStyle = "#3ecbca";
       ctx.lineWidth = 0.65;
@@ -743,6 +779,7 @@ export function createRenderer(templateAssets) {
     return c;
   }
   function drawDisc(p, l, images, guides) {
+    layoutScale = { x: 1, y: 1 };
     const d = TEMPLATE.disc,
       [c, ctx] = make(d, d),
       g = p.game;
@@ -826,7 +863,11 @@ export function createRenderer(templateAssets) {
   }
 
   function drawInterior(p, images, guides) {
-    const geo = geometry(p.case.spine), [c, ctx] = make(820, 504);
+    const geo = geometry(p.case.spine),
+      scale = caseScale(p.case.format),
+      [c, ctx] = make(TEMPLATE.width * scale.x, TEMPLATE.height * scale.y);
+    ctx.scale(scale.x, scale.y);
+    layoutScale = scale;
     rect(ctx, 0, 0, 820, 504, "#fff");
     rect(ctx, geo.backX, 24, geo.trimWidth, 456, "#161616");
     if (p.game.artwork.interiorMode === "artwork" && images.interior) {
@@ -858,8 +899,9 @@ export function createRenderer(templateAssets) {
       issues.clear();
       return (function* () {
         try {
-          yield { canvas: drawWrap(p, images, false), widthMm: 820 * 0.35, heightMm: 504 * 0.35 };
-          yield { canvas: drawInterior(p, images, false), widthMm: 820 * 0.35, heightMm: 504 * 0.35 };
+          const scale = caseScale(p.case.format);
+          yield { canvas: drawWrap(p, images, false), widthMm: TEMPLATE.width * scale.x * 0.35, heightMm: TEMPLATE.height * scale.y * 0.35 };
+          yield { canvas: drawInterior(p, images, false), widthMm: TEMPLATE.width * scale.x * 0.35, heightMm: TEMPLATE.height * scale.y * 0.35 };
           for (const label of p.media.labels)
             yield { canvas: drawDisc(p, label, images, false), widthMm: 120, heightMm: 120 };
         } finally { renderScale = 2; }
@@ -868,7 +910,8 @@ export function createRenderer(templateAssets) {
     render(p, images, { view = "wrap", guides = false, discNumber = 1 } = {}) {
       issues.clear();
       const wrap = drawWrap(p, images, guides),
-        geo = geometry(p.case.spine);
+        geo = geometry(p.case.spine),
+        scale = caseScale(p.case.format);
       let output = wrap;
       if (view === "interior") output = drawInterior(p, images, guides);
       // Validate every disc's dynamic text, but release off-screen canvases promptly.
@@ -884,8 +927,10 @@ export function createRenderer(templateAssets) {
                 ? geo.backX
                 : geo.spineX,
           w = view === "spine" ? geo.spineWidth : 366;
-        const [c, ctx] = make(w, 456);
-        ctx.drawImage(wrap, x * 2, 48, w * 2, 912, 0, 0, w, 456);
+        const [c, ctx] = make(w * scale.x, 456 * scale.y);
+        ctx.drawImage(wrap, x * scale.x * renderScale, 24 * scale.y * renderScale,
+          w * scale.x * renderScale, 456 * scale.y * renderScale, 0, 0,
+          w * scale.x, 456 * scale.y);
         c.setAttribute("role", "img");
         c.setAttribute(
           "aria-label",

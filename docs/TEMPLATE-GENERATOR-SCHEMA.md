@@ -6,12 +6,14 @@ This document defines the first generator contract for the existing Figma templa
 
 | Field | Values | Default |
 | --- | --- | --- |
+| `case.format` | `blu-ray`, `dvd` | `blu-ray` |
 | `case.spine` | `14mm`, `17mm` | `14mm` |
 | `case.content` | `full-game`, `key-media` | `full-game` |
 | `media.type` | `blu-ray`, `dvd`, `cd` | `blu-ray` |
 | `media.discCount` | Positive integer | `1` |
 
 The 14 mm case supports one or two discs. The wider case is intended for three discs; its exact manufactured spine width must be confirmed before print dimensions are locked.
+Blu-ray cases use a 128.1 × 159.6 mm cover panel; DVD cases use the standard 129 × 183 mm panel. The generator scales the shared artwork treatment to the selected format and keeps the Blu-ray format as the default for older projects.
 
 ## Required game data
 
@@ -55,6 +57,8 @@ type GameTemplateData = {
 
 `AssetRef` should store the source, source ID, embedded uploaded image data, crop focal point, attribution, and an optional `sourcePageUrl`. Main case and disc artwork may store a `scale` from `1` to `2` for crop zoom. The game-logo asset uses `0.4` to `1.6`; its focal point positions the logo on the front panel. Users browse SteamGridDB in a separate tab, download their chosen artwork, then upload and approve it in the generator. External image URLs are not required to reopen a saved project.
 
+Downloaded JSON projects include `case.format` with either `"blu-ray"` or `"dvd"`. When opening an older project where this key is absent, the generator migrates it to `"blu-ray"` and saves the key back into the next downloaded JSON file.
+
 The accepted [hosting and artwork architecture decision](TEMPLATE-GENERATOR-ARCHITECTURE.md) uses GitHub Pages and browser-side processing, without a SteamGridDB API key or backend integration.
 
 ## Project settings
@@ -68,6 +72,7 @@ type PrintProject = {
     steamGridDbUrl?: string // User-supplied game/gallery URL; not derived from the GOG ID
   }
   case: {
+    format: "blu-ray" | "dvd"
     spine: "14mm" | "17mm"
     content: "full-game" | "key-media"
   }
